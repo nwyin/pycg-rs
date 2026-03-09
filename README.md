@@ -4,6 +4,20 @@ A Rust reimplementation of [pyan3](https://github.com/Technologicat/pyan) — a 
 
 Parses Python source files and produces a directed graph of defines/uses relationships between modules, classes, functions, and methods. No Python runtime required — uses [ruff's parser](https://github.com/astral-sh/ruff) for AST parsing.
 
+## Installation
+
+```bash
+cargo install --path . --force
+```
+
+This installs the CLI as `pycg`, typically at `~/.cargo/bin/pycg`.
+
+If `pycg` is not on your `PATH`, add this to your shell config:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
 ## Usage
 
 ```bash
@@ -12,6 +26,9 @@ pycg src/**/*.py
 
 # Output as plain text dependency list
 pycg mypackage/ --format text
+
+# Analyze a package and keep module names rooted at the repo src dir
+pycg mypackage/ --root .
 
 # Show both defines and uses edges, colored by file
 pycg mypackage/ -d -u --colored --grouped
@@ -31,6 +48,8 @@ Arguments:
 Options:
   -d, --defines          Draw defines edges
   -u, --uses             Draw uses edges
+  -m, --modules          Show module-level import dependencies instead of
+                         symbol-level call graph
   -c, --colored          Color nodes by file
   -g, --grouped          Group nodes by namespace
   -a, --annotated        Annotate nodes with file:line info
@@ -41,6 +60,25 @@ Options:
 ```
 
 If neither `--defines` nor `--uses` is specified, uses edges are shown by default.
+
+### Typical workflows
+
+```bash
+# Inspect call dependencies in a package
+pycg src/
+
+# Show only defines edges
+pycg src/ --defines
+
+# Render a grouped, annotated SVG
+pycg src/ --root . --defines --uses --grouped --annotated | dot -Tsvg -o callgraph.svg
+
+# Module-level import dependency graph
+pycg src/ --modules | dot -Tsvg -o imports.svg
+
+# Debug analyzer decisions
+pycg src/ -vv
+```
 
 ## Output formats
 
@@ -68,7 +106,10 @@ If neither `--defines` nor `--uses` is specified, uses edges are shown by defaul
 - Decorator analysis (`@staticmethod`, `@classmethod`, `@property`)
 - Inheritance with MRO-aware attribute lookup
 - Assignments, augmented assignments, annotated assignments
+- Return-value propagation across calls, including multi-return cases
+- Tuple/list destructuring and shallow list/dict subscript flow for statically-known literals
 - For-loop bindings, comprehensions, lambdas
+- Context-manager, iterator, `str`, `repr`, `del obj.attr`, and `del obj[key]` protocol edges
 - Match statement patterns (Python 3.10+)
 - Type alias statements (Python 3.12+)
 
@@ -84,9 +125,15 @@ cargo build --release
 cargo test
 ```
 
-45 tests: 18 unit tests covering graph construction, coloring, and output formatting; 27 integration tests using Python fixture files covering core analysis, decorators, inheritance, output formats, regression cases, iterator/context-manager protocol edges, and corpus-scale smoke tests.
-
 Corpus-scale smoke tests run the full analysis pipeline over vendored real-world packages (`requests`, `flask`, `rich`) and assert non-degenerate graph statistics. They skip automatically when the corpora are absent (e.g. in fresh clones), so `cargo test` stays green without them.
+
+To clone the corpora (and the `pyan`/`PyCG` reference repos) locally:
+
+```bash
+./scripts/bootstrap-corpora.sh
+```
+
+This is idempotent and safe to re-run. After cloning, `cargo test` will include the corpus smoke tests.
 
 ## Performance
 
@@ -100,11 +147,9 @@ Corpus-scale smoke tests run the full analysis pipeline over vendored real-world
 
 ## Differences from pyan3
 
-This is an MVP port. Not yet implemented:
+This is a standalone CLI/library that already covers a substantial subset of Python call-graph analysis, but it is still narrower than pyan3 in scope. Not yet implemented:
 
 - PyO3 Python bindings
-- Module-level dependency analysis mode
-- `del` statement protocol edges (`__delattr__`/`__delitem__`)
 
 ## License
 

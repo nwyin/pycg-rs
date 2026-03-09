@@ -3337,6 +3337,97 @@ impl CallGraph {
             }
         }
     }
+
+    // ------------------------------------------------------------------
+    // Module-level dependency graph
+    // ------------------------------------------------------------------
+
+    /// Derive a module-level dependency graph by collapsing all cross-module
+    /// uses edges.
+    ///
+    /// For each uses edge `src → tgt`, both nodes are mapped back to their
+    /// owning module (via filename for analyzed code, via node name for
+    /// external `Flavor::Module` targets).  If they differ, a module-level
+    /// edge is emitted.  Deduplication at the module level keeps the graph
+    /// clean.
+    ///
+    /// Returns `(nodes_arena, uses_edges, defined)` suitable for passing
+    /// directly to `VisualGraph::from_call_graph`.
+    pub fn derive_module_graph(
+        &self,
+    ) -> (
+        Vec<Node>,
+        HashMap<NodeId, HashSet<NodeId>>,
+        HashSet<NodeId>,
+    ) {
+        // Reverse mapping: filename → module name (for analyzed files).
+        let filename_to_module: HashMap<&str, &str> = self
+            .module_to_filename
+            .iter()
+            .map(|(m, f)| (f.as_str(), m.as_str()))
+            .collect();
+
+        // Collect module nodes and assign new compact IDs.
+        let mut module_ids: HashMap<String, NodeId> = HashMap::new();
+        let mut new_nodes: Vec<Node> = Vec::new();
+
+        let mut ensure_module = |name: &str, nodes: &mut Vec<Node>| -> NodeId {
+            if let Some(&id) = module_ids.get(name) {
+                return id;
+            }
+            let id = nodes.len();
+            nodes.push(Node::new(Some(""), name, Flavor::Module));
+            module_ids.insert(name.to_string(), id);
+            id
+        };
+
+        // Seed with all analyzed modules.
+        for (mod_name, filename) in &self.module_to_filename {
+            let id = ensure_module(mod_name, &mut new_nodes);
+            new_nodes[id].filename = Some(filename.clone());
+        }
+
+        // Collapse uses_edges to module granularity.
+        let mut module_edges: HashMap<NodeId, HashSet<NodeId>> = HashMap::new();
+
+        for (&src, targets) in &self.uses_edges {
+            let src_node = &self.nodes_arena[src];
+            let src_mod = match src_node.filename.as_deref() {
+                Some(f) => filename_to_module.get(f).copied(),
+                None => None,
+            };
+            let Some(src_mod) = src_mod else { continue };
+
+            for &tgt in targets {
+                let tgt_node = &self.nodes_arena[tgt];
+
+                // Map target to its owning module: Module-flavored nodes
+                // use their name (handles external/stdlib); all others
+                // use their filename.
+                let tgt_mod: Option<String> = if tgt_node.flavor == Flavor::Module {
+                    Some(tgt_node.get_name())
+                } else {
+                    tgt_node
+                        .filename
+                        .as_deref()
+                        .and_then(|f| filename_to_module.get(f))
+                        .map(|s| s.to_string())
+                };
+
+                let Some(tgt_mod) = tgt_mod else { continue };
+                if tgt_mod == src_mod {
+                    continue;
+                }
+
+                let src_mid = ensure_module(src_mod, &mut new_nodes);
+                let tgt_mid = ensure_module(&tgt_mod, &mut new_nodes);
+                module_edges.entry(src_mid).or_default().insert(tgt_mid);
+            }
+        }
+
+        let defined: HashSet<NodeId> = (0..new_nodes.len()).collect();
+        (new_nodes, module_edges, defined)
+    }
 }
 
 // =========================================================================

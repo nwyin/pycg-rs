@@ -48,6 +48,10 @@ struct Cli {
     #[arg(long, default_value = "TB")]
     rankdir: String,
 
+    /// Show module-level import dependencies instead of symbol-level call graph
+    #[arg(long, short = 'm')]
+    modules: bool,
+
     /// Enable verbose logging
     #[arg(long, short = 'v', action = clap::ArgAction::Count)]
     verbose: u8,
@@ -116,13 +120,31 @@ fn main() -> Result<()> {
         annotated: cli.annotated,
     };
 
-    let vg = VisualGraph::from_call_graph(
-        &cg.nodes_arena,
-        &cg.defined,
-        &cg.defines_edges,
-        &cg.uses_edges,
-        &options,
-    );
+    let vg = if cli.modules {
+        let (mod_nodes, mod_uses, mod_defined) = cg.derive_module_graph();
+        let mod_options = VisualOptions {
+            draw_defines: false,
+            draw_uses: true,
+            colored: options.colored,
+            grouped: options.grouped,
+            annotated: options.annotated,
+        };
+        VisualGraph::from_call_graph(
+            &mod_nodes,
+            &mod_defined,
+            &std::collections::HashMap::new(),
+            &mod_uses,
+            &mod_options,
+        )
+    } else {
+        VisualGraph::from_call_graph(
+            &cg.nodes_arena,
+            &cg.defined,
+            &cg.defines_edges,
+            &cg.uses_edges,
+            &options,
+        )
+    };
 
     let output = match cli.format {
         Format::Dot => writer::write_dot(&vg, &[format!("rankdir={}", cli.rankdir)]),

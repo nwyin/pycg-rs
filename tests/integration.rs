@@ -202,6 +202,50 @@ fn test_dot_output_grouped() {
 }
 
 // ===================================================================
+// Module-level dependency graph
+// ===================================================================
+
+#[test]
+fn test_module_graph() {
+    let cg = make_call_graph(&test_code_dir());
+    let (mod_nodes, mod_uses, mod_defined) = cg.derive_module_graph();
+
+    // Should have module nodes for analyzed files.
+    assert!(
+        mod_nodes.len() >= 5,
+        "module graph should have several modules, got {}",
+        mod_nodes.len()
+    );
+    assert_eq!(mod_defined.len(), mod_nodes.len());
+
+    // Should have cross-module edges (submodule1 imports from subpackage1, etc.)
+    let total_edges: usize = mod_uses.values().map(|s| s.len()).sum();
+    assert!(
+        total_edges >= 3,
+        "module graph should have cross-module edges, got {total_edges}"
+    );
+
+    // Render through the full pipeline — should produce valid DOT.
+    let opts = VisualOptions {
+        draw_defines: false,
+        draw_uses: true,
+        colored: false,
+        grouped: false,
+        annotated: false,
+    };
+    let vg = VisualGraph::from_call_graph(
+        &mod_nodes,
+        &mod_defined,
+        &std::collections::HashMap::new(),
+        &mod_uses,
+        &opts,
+    );
+    let dot = writer::write_dot(&vg, &["rankdir=TB".to_string()]);
+    assert!(dot.starts_with("digraph G {"));
+    assert!(dot.contains("->"), "module DOT should contain edges");
+}
+
+// ===================================================================
 // TGF output format tests
 // ===================================================================
 
