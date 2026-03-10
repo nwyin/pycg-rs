@@ -237,6 +237,7 @@ pub struct CallGraph {
 #[derive(Debug)]
 pub(super) struct AnalysisSession {
     pub(super) graph: CallGraph,
+    node_ids_by_key: HashMap<NodeKey, NodeId>,
 
     // Scope tracking (persistent across files/passes) -------------------
     pub(super) scopes: HashMap<String, ScopeInfo>,
@@ -280,6 +281,21 @@ struct CachedFile {
     module: ModModule,
     line_index: LineIndex,
     scopes: HashMap<String, ScopeInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct NodeKey {
+    namespace: Option<String>,
+    name: String,
+}
+
+impl NodeKey {
+    fn new(namespace: Option<&str>, name: &str) -> Self {
+        Self {
+            namespace: namespace.map(str::to_owned),
+            name: name.to_string(),
+        }
+    }
 }
 
 impl Deref for AnalysisSession {
@@ -326,6 +342,7 @@ impl AnalysisSession {
                 defined: HashSet::new(),
                 module_to_filename,
             },
+            node_ids_by_key: HashMap::new(),
             scopes: HashMap::new(),
             function_returns: HashMap::new(),
             class_base_ast_info: HashMap::new(),
@@ -710,18 +727,14 @@ impl AnalysisSession {
         name: &str,
         flavor: Flavor,
     ) -> NodeId {
-        // Check for existing node with matching (namespace, name).
-        if let Some(ids) = self.nodes_by_name.get(name) {
-            for &id in ids {
-                let n = &self.nodes_arena[id];
-                if n.namespace.as_deref() == namespace {
-                    // Update flavor if strictly more specific
-                    if flavor.specificity() > n.flavor.specificity() {
-                        self.nodes_arena[id].flavor = flavor;
-                    }
-                    return id;
-                }
+        let key = NodeKey::new(namespace, name);
+        if let Some(&id) = self.node_ids_by_key.get(&key) {
+            let n = &self.nodes_arena[id];
+            // Update flavor if strictly more specific
+            if flavor.specificity() > n.flavor.specificity() {
+                self.nodes_arena[id].flavor = flavor;
             }
+            return id;
         }
 
         // Determine filename
@@ -744,6 +757,7 @@ impl AnalysisSession {
         }
 
         self.nodes_arena.push(node);
+        self.node_ids_by_key.insert(key, id);
         self.nodes_by_name
             .entry(name.to_string())
             .or_default()
