@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 /// Convert HLS (hue, lightness, saturation) to RGB, each in [0.0, 1.0].
 ///
 /// This mirrors Python's `colorsys.hls_to_rgb`.
-fn hls_to_rgb(h: f64, l: f64, s: f64) -> (f64, f64, f64) {
+pub fn hls_to_rgb(h: f64, l: f64, s: f64) -> (f64, f64, f64) {
     if s == 0.0 {
         return (l, l, l);
     }
@@ -45,7 +45,7 @@ fn hls_to_rgb(h: f64, l: f64, s: f64) -> (f64, f64, f64) {
 }
 
 /// Format floating-point RGBA values (each in [0.0, 1.0]) as `#rrggbbaa`.
-fn rgba_hex(r: f64, g: f64, b: f64, a: f64) -> String {
+pub fn rgba_hex(r: f64, g: f64, b: f64, a: f64) -> String {
     let ri = (255.0 * r) as u8;
     let gi = (255.0 * g) as u8;
     let bi = (255.0 * b) as u8;
