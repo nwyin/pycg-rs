@@ -31,8 +31,12 @@ clone_or_update() {
 
     if [ -d "$dest/.git" ]; then
         echo "  [update] $label"
-        git -C "$dest" fetch --quiet origin
-        git -C "$dest" reset --quiet --hard origin/HEAD
+        # Shallow clones may be in detached HEAD; re-clone if fetch fails
+        if ! git -C "$dest" pull --quiet --depth 1 2>/dev/null; then
+            echo "  [re-clone] $label"
+            rm -rf "$dest"
+            git clone --quiet --depth 1 "$url" "$dest"
+        fi
     else
         echo "  [clone]  $label → $(basename "$dest")"
         git clone --quiet --depth 1 "$url" "$dest"
@@ -85,6 +89,26 @@ bootstrap_corpora() {
         "https://github.com/psf/black.git" \
         "$CORPORA_DIR/black" \
         "black"
+
+    clone_or_update \
+        "https://github.com/pytest-dev/pytest.git" \
+        "$CORPORA_DIR/pytest" \
+        "pytest"
+
+    clone_or_update \
+        "https://github.com/pallets/click.git" \
+        "$CORPORA_DIR/click" \
+        "click"
+
+    clone_or_update \
+        "https://github.com/pydantic/pydantic.git" \
+        "$CORPORA_DIR/pydantic" \
+        "pydantic"
+
+    clone_or_update \
+        "https://github.com/fastapi/fastapi.git" \
+        "$CORPORA_DIR/fastapi" \
+        "fastapi"
 }
 
 # ── entry point ────────────────────────────────────────────────────────────

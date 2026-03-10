@@ -1,9 +1,12 @@
 //! Output writers for the visual call graph.
 //!
 //! Provides functions to serialize a [`VisualGraph`] into DOT (GraphViz),
-//! TGF (Trivial Graph Format), and plain text.
+//! TGF (Trivial Graph Format), plain text, and JSON.
 
+use crate::node::{Node, NodeId};
 use crate::visgraph::{VisualGraph, VisualNode};
+use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
 // ---------------------------------------------------------------------------
@@ -159,6 +162,143 @@ pub fn write_text(graph: &VisualGraph) -> String {
     }
 
     out
+}
+
+// ---------------------------------------------------------------------------
+// JSON writer
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+struct JsonNode {
+    name: String,
+    flavor: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    line: Option<usize>,
+}
+
+#[derive(Serialize)]
+struct JsonEdge {
+    source: String,
+    target: String,
+    kind: &'static str,
+}
+
+#[derive(Serialize)]
+struct JsonGraph {
+    nodes: Vec<JsonNode>,
+    edges: Vec<JsonEdge>,
+    stats: JsonStats,
+}
+
+#[derive(Serialize)]
+struct JsonStats {
+    total_nodes: usize,
+    total_edges: usize,
+    files_analyzed: usize,
+    classes: usize,
+    functions: usize,
+    modules: usize,
+}
+
+/// Render the call graph directly as JSON.
+///
+/// Unlike the other writers which operate on the visual graph, this serializes
+/// the raw call graph data for machine consumption.
+pub fn write_json(
+    nodes_arena: &[Node],
+    defined: &HashSet<NodeId>,
+    defines_edges: &HashMap<NodeId, HashSet<NodeId>>,
+    uses_edges: &HashMap<NodeId, HashSet<NodeId>>,
+) -> String {
+    use crate::node::Flavor;
+
+    let mut nodes = Vec::new();
+    let mut sorted_ids: Vec<NodeId> = defined.iter().copied().collect();
+    sorted_ids.sort_by(|&a, &b| {
+        let na = &nodes_arena[a];
+        let nb = &nodes_arena[b];
+        (&na.namespace, &na.name).cmp(&(&nb.namespace, &nb.name))
+    });
+
+    let mut files: HashSet<&str> = HashSet::new();
+    let mut classes = 0usize;
+    let mut functions = 0usize;
+    let mut modules = 0usize;
+
+    for &id in &sorted_ids {
+        let n = &nodes_arena[id];
+        if let Some(ref f) = n.filename {
+            files.insert(f.as_str());
+        }
+        match n.flavor {
+            Flavor::Class => classes += 1,
+            Flavor::Function | Flavor::Method | Flavor::StaticMethod | Flavor::ClassMethod => {
+                functions += 1
+            }
+            Flavor::Module => modules += 1,
+            _ => {}
+        }
+        nodes.push(JsonNode {
+            name: n.get_name(),
+            flavor: n.flavor.to_string(),
+            file: n.filename.clone(),
+            line: n.line,
+        });
+    }
+
+    let defined_set: &HashSet<NodeId> = defined;
+    let mut edges = Vec::new();
+
+    for (&src, targets) in defines_edges {
+        if !defined_set.contains(&src) {
+            continue;
+        }
+        for &tgt in targets {
+            if !defined_set.contains(&tgt) {
+                continue;
+            }
+            edges.push(JsonEdge {
+                source: nodes_arena[src].get_name(),
+                target: nodes_arena[tgt].get_name(),
+                kind: "defines",
+            });
+        }
+    }
+
+    for (&src, targets) in uses_edges {
+        if !defined_set.contains(&src) {
+            continue;
+        }
+        for &tgt in targets {
+            if !defined_set.contains(&tgt) {
+                continue;
+            }
+            edges.push(JsonEdge {
+                source: nodes_arena[src].get_name(),
+                target: nodes_arena[tgt].get_name(),
+                kind: "uses",
+            });
+        }
+    }
+
+    edges.sort_by(|a, b| (&a.source, &a.target, a.kind).cmp(&(&b.source, &b.target, b.kind)));
+
+    let graph = JsonGraph {
+        stats: JsonStats {
+            total_nodes: nodes.len(),
+            total_edges: edges.len(),
+            files_analyzed: files.len(),
+            classes,
+            functions,
+            modules,
+        },
+        nodes,
+        edges,
+    };
+
+    serde_json::to_string_pretty(&graph).expect("JSON serialization failed")
 }
 
 // ---------------------------------------------------------------------------

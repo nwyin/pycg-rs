@@ -1,0 +1,79 @@
+name: Analysis Report
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"  # weekly Monday 6am UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Run tests
+        id: tests
+        run: |
+          output=$(cargo test 2>&1)
+          count=$(echo "$output" | grep -oP '\d+(?= passed)' | tail -1)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "$output"
+
+      - name: Bootstrap corpora
+        run: ./scripts/bootstrap-corpora.sh --only-corpora
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate report
+        run: |
+          python scripts/generate_report.py \
+            --pycg ./target/release/pycg \
+            --corpora benchmarks/corpora \
+            --out report/index.html \
+            --test-count "${{ steps.tests.outputs.count }}" \
+            --commit "${{ github.sha }}"
+
+      - name: Upload pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: report
+
+  deploy:
+    needs: build-report
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

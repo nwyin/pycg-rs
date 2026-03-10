@@ -62,6 +62,7 @@ enum Format {
     Dot,
     Tgf,
     Text,
+    Json,
 }
 
 fn collect_python_files(paths: &[PathBuf]) -> Vec<String> {
@@ -120,36 +121,47 @@ fn main() -> Result<()> {
         annotated: cli.annotated,
     };
 
-    let vg = if cli.modules {
-        let (mod_nodes, mod_uses, mod_defined) = cg.derive_module_graph();
-        let mod_options = VisualOptions {
-            draw_defines: false,
-            draw_uses: true,
-            colored: options.colored,
-            grouped: options.grouped,
-            annotated: options.annotated,
-        };
-        VisualGraph::from_call_graph(
-            &mod_nodes,
-            &mod_defined,
-            &std::collections::HashMap::new(),
-            &mod_uses,
-            &mod_options,
-        )
+    let output = if matches!(cli.format, Format::Json) {
+        // JSON bypasses the visual graph — serialize raw call graph data.
+        if cli.modules {
+            let (mod_nodes, mod_uses, mod_defined) = cg.derive_module_graph();
+            writer::write_json(&mod_nodes, &mod_defined, &std::collections::HashMap::new(), &mod_uses)
+        } else {
+            writer::write_json(&cg.nodes_arena, &cg.defined, &cg.defines_edges, &cg.uses_edges)
+        }
     } else {
-        VisualGraph::from_call_graph(
-            &cg.nodes_arena,
-            &cg.defined,
-            &cg.defines_edges,
-            &cg.uses_edges,
-            &options,
-        )
-    };
+        let vg = if cli.modules {
+            let (mod_nodes, mod_uses, mod_defined) = cg.derive_module_graph();
+            let mod_options = VisualOptions {
+                draw_defines: false,
+                draw_uses: true,
+                colored: options.colored,
+                grouped: options.grouped,
+                annotated: options.annotated,
+            };
+            VisualGraph::from_call_graph(
+                &mod_nodes,
+                &mod_defined,
+                &std::collections::HashMap::new(),
+                &mod_uses,
+                &mod_options,
+            )
+        } else {
+            VisualGraph::from_call_graph(
+                &cg.nodes_arena,
+                &cg.defined,
+                &cg.defines_edges,
+                &cg.uses_edges,
+                &options,
+            )
+        };
 
-    let output = match cli.format {
-        Format::Dot => writer::write_dot(&vg, &[format!("rankdir={}", cli.rankdir)]),
-        Format::Tgf => writer::write_tgf(&vg),
-        Format::Text => writer::write_text(&vg),
+        match cli.format {
+            Format::Dot => writer::write_dot(&vg, &[format!("rankdir={}", cli.rankdir)]),
+            Format::Tgf => writer::write_tgf(&vg),
+            Format::Text => writer::write_text(&vg),
+            Format::Json => unreachable!(),
+        }
     };
 
     let mut stdout = std::io::stdout().lock();

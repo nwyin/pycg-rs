@@ -11,6 +11,9 @@
 /benchmarks/results/*.json
 /benchmarks/results/**/*.json
 
+# Generated report output
+/report/
+
 # Local Codex/Hive state
 /.hive/
 /.hive-home/
