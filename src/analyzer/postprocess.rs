@@ -310,8 +310,8 @@ impl super::AnalysisSession {
                     {
                         let parent_to = self.get_parent_node(to);
                         let parent_other = self.get_parent_node(other);
-                        if let Some(parent_to_uses) = self.uses_edges.get(&parent_to)
-                            && parent_to_uses.contains(&parent_other)
+                        if let Some(parent_other_uses) = self.uses_edges.get(&parent_other)
+                            && parent_other_uses.contains(&parent_to)
                         {
                             inherited = true;
                             break;
@@ -434,5 +434,85 @@ impl super::CallGraph {
 
         let defined: HashSet<NodeId> = (0..new_nodes.len()).collect();
         (new_nodes, module_edges, defined)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{AnalysisSession, ScopeInfo};
+
+    use crate::node::Flavor;
+
+    #[test]
+    fn expand_unknowns_replaces_wildcard_uses_with_concrete_candidates() {
+        let mut session = AnalysisSession::new(&[], None);
+        let caller = session.get_node(Some("pkg"), "caller", Flavor::Function);
+        let unknown = session.get_node(None, "work", Flavor::Unknown);
+        let worker_a = session.get_node(Some("pkg.WorkerA"), "work", Flavor::Method);
+        let worker_b = session.get_node(Some("pkg.WorkerB"), "work", Flavor::Method);
+
+        session.add_uses_edge(caller, unknown);
+        session.expand_unknowns();
+
+        let targets = session.uses_edges.get(&caller).expect("caller uses edges");
+        assert!(targets.contains(&worker_a));
+        assert!(targets.contains(&worker_b));
+        assert!(
+            !targets.contains(&unknown),
+            "wildcard edge should be replaced by concrete candidates",
+        );
+        assert!(
+            !session.defined.contains(&unknown),
+            "wildcard nodes should be marked undefined after expansion",
+        );
+    }
+
+    #[test]
+    fn resolve_imports_remaps_scope_backed_imported_items() {
+        let mut session = AnalysisSession::new(&[], None);
+        let caller = session.get_node(Some("app"), "caller", Flavor::Function);
+        let imported = session.get_node(Some("lib"), "item", Flavor::ImportedItem);
+        let concrete = session.get_node(Some("lib.impl"), "item", Flavor::Function);
+
+        let mut scope = ScopeInfo::new("lib");
+        scope
+            .defs
+            .entry("item".to_string())
+            .or_default()
+            .insert(concrete);
+        session.scopes.insert("lib".to_string(), scope);
+        session.add_uses_edge(caller, imported);
+
+        session.resolve_imports();
+
+        let targets = session.uses_edges.get(&caller).expect("caller uses edges");
+        assert!(targets.contains(&concrete));
+        assert!(
+            !targets.contains(&imported),
+            "import placeholder should be remapped to the concrete target",
+        );
+    }
+
+    #[test]
+    fn cull_inherited_removes_redundant_parent_method_edges() {
+        let mut session = AnalysisSession::new(&[], None);
+        let caller = session.get_node(Some("pkg"), "caller", Flavor::Function);
+        let parent = session.get_node(Some("pkg"), "Parent", Flavor::Class);
+        let child = session.get_node(Some("pkg"), "Child", Flavor::Class);
+        let parent_method = session.get_node(Some("pkg.Parent"), "shared", Flavor::Method);
+        let child_method = session.get_node(Some("pkg.Child"), "shared", Flavor::Method);
+
+        session.add_uses_edge(child, parent);
+        session.add_uses_edge(caller, parent_method);
+        session.add_uses_edge(caller, child_method);
+
+        session.cull_inherited();
+
+        let targets = session.uses_edges.get(&caller).expect("caller uses edges");
+        assert!(
+            !targets.contains(&parent_method),
+            "redundant inherited edge should be removed",
+        );
+        assert!(targets.contains(&child_method));
     }
 }

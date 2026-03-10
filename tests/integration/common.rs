@@ -76,6 +76,19 @@ pub(crate) fn get_uses(cg: &CallGraph, source_name: &str) -> HashSet<String> {
     result
 }
 
+/// Get the set of fully-qualified names that `source_name` uses.
+pub(crate) fn get_full_uses(cg: &CallGraph, source_name: &str) -> HashSet<String> {
+    let mut result = HashSet::new();
+    for &nid in find_nodes_by_name(cg, source_name).iter() {
+        if let Some(targets) = cg.uses_edges.get(&nid) {
+            for &tid in targets {
+                result.insert(cg.nodes_arena[tid].get_name());
+            }
+        }
+    }
+    result
+}
+
 /// Check if there is a defines edge from a node matching `from_name` to one matching `to_name`.
 pub(crate) fn has_defines_edge(cg: &CallGraph, from_name: &str, to_name: &str) -> bool {
     for &fid in find_nodes_by_name(cg, from_name).iter() {
@@ -104,7 +117,6 @@ pub(crate) fn has_uses_edge(cg: &CallGraph, from_name: &str, to_name: &str) -> b
     false
 }
 
-
 pub(crate) fn make_features_graph() -> CallGraph {
     let features_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
@@ -113,7 +125,6 @@ pub(crate) fn make_features_graph() -> CallGraph {
     let files = vec![features_file.to_string_lossy().to_string()];
     CallGraph::new(&files, None).expect("should parse features.py")
 }
-
 
 pub(crate) fn make_fixture_graph(fixture: &str) -> CallGraph {
     let file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -133,7 +144,6 @@ pub(crate) fn make_fixture_dir_graph(subdir: &str) -> CallGraph {
     let root = dir.parent().unwrap().to_string_lossy().to_string();
     CallGraph::new(&files, Some(&root)).expect(&format!("should parse {subdir}"))
 }
-
 
 pub(crate) fn make_single_fixture_graph(fixture_name: &str) -> CallGraph {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -156,7 +166,11 @@ pub(crate) fn make_multi_fixture_graph(fixture_relative_paths: &[&str]) -> CallG
         .unwrap_or_else(|e| panic!("failed to parse multi-file fixture: {e}"))
 }
 
-pub(crate) fn has_concrete_uses_edge_for_name(cg: &CallGraph, from_name: &str, short_name: &str) -> bool {
+pub(crate) fn has_concrete_uses_edge_for_name(
+    cg: &CallGraph,
+    from_name: &str,
+    short_name: &str,
+) -> bool {
     for &fid in find_nodes_by_name(cg, from_name).iter() {
         if let Some(targets) = cg.uses_edges.get(&fid) {
             for &tid in targets {

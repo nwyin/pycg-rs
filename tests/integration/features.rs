@@ -108,6 +108,45 @@ fn test_iterator_protocol_comprehension() {
     );
 }
 
+#[test]
+fn test_iterator_protocol_set_comprehension() {
+    let cg = make_fixture_graph("comprehension_coverage.py");
+    assert!(
+        has_uses_edge(&cg, "set_comp_protocol", "__iter__"),
+        "set_comp_protocol should use Sequence.__iter__"
+    );
+    assert!(
+        has_uses_edge(&cg, "set_comp_protocol", "__next__"),
+        "set_comp_protocol should use Sequence.__next__"
+    );
+}
+
+#[test]
+fn test_iterator_protocol_dict_comprehension() {
+    let cg = make_fixture_graph("comprehension_coverage.py");
+    assert!(
+        has_uses_edge(&cg, "dict_comp_protocol", "__iter__"),
+        "dict_comp_protocol should use Sequence.__iter__"
+    );
+    assert!(
+        has_uses_edge(&cg, "dict_comp_protocol", "__next__"),
+        "dict_comp_protocol should use Sequence.__next__"
+    );
+}
+
+#[test]
+fn test_iterator_protocol_generator_expression() {
+    let cg = make_fixture_graph("comprehension_coverage.py");
+    assert!(
+        has_uses_edge(&cg, "genexpr_protocol", "__iter__"),
+        "genexpr_protocol should use Sequence.__iter__"
+    );
+    assert!(
+        has_uses_edge(&cg, "genexpr_protocol", "__next__"),
+        "genexpr_protocol should use Sequence.__next__"
+    );
+}
+
 /// Protocol edges must only be emitted for known-class iterables, not for
 /// unknown/unresolved iterables (e.g., function arguments like `items`).
 #[test]

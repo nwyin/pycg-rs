@@ -2082,8 +2082,9 @@ impl AnalysisSession {
             self.emit_protocol_edges(obj_id, methods);
         }
 
-        // Bind target to iter value
-        self.analyze_binding_simple(&node.target, iter_node, line_index);
+        // Bind loop targets to the iterable's element values when shallow
+        // container facts are available; otherwise fall back to the iterator.
+        self.bind_iteration_target(&node.target, &node.iter, iter_node, line_index);
 
         for stmt in &node.body {
             self.visit_stmt(stmt, line_index);
@@ -2825,7 +2826,7 @@ impl AnalysisSession {
         self.context_stack.push(label.to_string());
 
         // Bind outermost targets
-        self.analyze_binding_simple(&outermost.target, iter_node, line_index);
+        self.bind_iteration_target(&outermost.target, &outermost.iter, iter_node, line_index);
         for if_expr in &outermost.ifs {
             self.visit_expr(if_expr, line_index);
         }
@@ -2844,7 +2845,7 @@ impl AnalysisSession {
                 };
                 self.emit_protocol_edges(obj_id, methods);
             }
-            self.analyze_binding_simple(&comp.target, val, line_index);
+            self.bind_iteration_target(&comp.target, &comp.iter, val, line_index);
             for if_expr in &comp.ifs {
                 self.visit_expr(if_expr, line_index);
             }
@@ -2959,6 +2960,24 @@ impl AnalysisSession {
                 self.bind_target_to_shallow_value(&s.value, value);
             }
             _ => {}
+        }
+    }
+
+    fn bind_iteration_target(
+        &mut self,
+        target: &Expr,
+        iter_expr: &Expr,
+        iter_node: Option<NodeId>,
+        line_index: &LineIndex,
+    ) {
+        let iterated = self
+            .resolve_shallow_value(iter_expr)
+            .containers
+            .resolve_subscript(None);
+        if !iterated.values.is_empty() || !iterated.containers.is_empty() {
+            self.bind_target_to_shallow_value(target, &iterated);
+        } else {
+            self.analyze_binding_simple(target, iter_node, line_index);
         }
     }
 
@@ -3105,5 +3124,850 @@ impl AnalysisSession {
         }
 
         Some(current)
+    }
+}
+
+#[cfg(test)]
+mod prepass_tests {
+    use super::*;
+
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    fn parse_module(source: &str) -> ModModule {
+        let parsed = ruff_python_parser::parse_unchecked(source, ParseOptions::from(Mode::Module));
+        match parsed.into_syntax() {
+            Mod::Module(module) => module,
+            other => panic!("expected module syntax, got {other:?}"),
+        }
+    }
+
+    fn find_exact_node(cg: &CallGraph, exact_name: &str) -> NodeId {
+        cg.nodes_arena
+            .iter()
+            .enumerate()
+            .find_map(|(id, node)| (node.get_name() == exact_name).then_some(id))
+            .unwrap_or_else(|| panic!("node {exact_name} not found"))
+    }
+
+    fn exact_uses(cg: &CallGraph, exact_name: &str) -> HashSet<String> {
+        let from_id = find_exact_node(cg, exact_name);
+        cg.uses_edges
+            .get(&from_id)
+            .into_iter()
+            .flat_map(|targets| targets.iter())
+            .map(|&id| cg.nodes_arena[id].get_name())
+            .collect()
+    }
+
+    #[test]
+    fn build_scopes_collects_compound_bindings() {
+        let module = parse_module(
+            r#"
+total += 1
+annotated: int = 1
+first, (second, *rest) = values
+[left, right] = pairs
+for item, (loop_left, loop_right) in rows:
+    pass
+if cond:
+    from_if = 1
+elif other:
+    from_elif = 1
+while cond2:
+    from_while = 1
+else:
+    from_while_else = 1
+with ctx() as handle, other() as (cm_left, cm_right):
+    from_with = 1
+try:
+    from_try = 1
+except Err as err:
+    from_except = 1
+else:
+    from_else = 1
+finally:
+    from_finally = 1
+__all__ = ["public_name"]
+"#,
+        );
+
+        let scopes = AnalysisSession::build_scopes(&module, "pkg.mod");
+        let scope = scopes.get("pkg.mod").expect("module scope should exist");
+
+        for name in [
+            "total",
+            "annotated",
+            "first",
+            "second",
+            "rest",
+            "left",
+            "right",
+            "item",
+            "loop_left",
+            "loop_right",
+            "from_if",
+            "from_elif",
+            "from_while",
+            "from_while_else",
+            "handle",
+            "cm_left",
+            "cm_right",
+            "from_with",
+            "from_try",
+            "err",
+            "from_except",
+            "from_else",
+            "from_finally",
+        ] {
+            assert!(
+                scope.defs.contains_key(name),
+                "missing scope def for {name}"
+            );
+            assert!(
+                scope.locals.contains(name),
+                "missing local binding for {name}"
+            );
+        }
+
+        assert_eq!(
+            scope.all_exports,
+            Some(HashSet::from([String::from("public_name")])),
+            "__all__ should be collected from a literal assignment"
+        );
+    }
+
+    #[test]
+    fn build_scopes_collects_nested_scopes_from_compound_statements() {
+        let module = parse_module(
+            r#"
+if cond:
+    def in_if():
+        pass
+elif other:
+    class InElif:
+        pass
+while cond2:
+    def in_while():
+        pass
+else:
+    class InWhileElse:
+        pass
+for item in rows:
+    def in_for():
+        pass
+else:
+    class InForElse:
+        pass
+with ctx() as handle:
+    def in_with():
+        pass
+try:
+    def in_try():
+        pass
+except Err:
+    class InExcept:
+        pass
+else:
+    def in_else():
+        pass
+finally:
+    class InFinally:
+        pass
+"#,
+        );
+
+        let scopes = AnalysisSession::build_scopes(&module, "pkg.mod");
+        for scope_name in [
+            "pkg.mod.in_if",
+            "pkg.mod.InElif",
+            "pkg.mod.in_while",
+            "pkg.mod.InWhileElse",
+            "pkg.mod.in_for",
+            "pkg.mod.InForElse",
+            "pkg.mod.in_with",
+            "pkg.mod.in_try",
+            "pkg.mod.InExcept",
+            "pkg.mod.in_else",
+            "pkg.mod.InFinally",
+        ] {
+            assert!(
+                scopes.contains_key(scope_name),
+                "missing nested scope {scope_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn merge_scopes_preserves_existing_exports() {
+        let mut session = AnalysisSession::new(&[], None);
+        let mut existing = ScopeInfo::new("");
+        existing.defs.insert("kept".to_string(), ValueSet::empty());
+        existing.all_exports = Some(HashSet::from([String::from("kept")]));
+        session.scopes.insert("pkg.mod".to_string(), existing);
+
+        let mut incoming = ScopeInfo::new("");
+        incoming.defs.insert("added".to_string(), ValueSet::empty());
+
+        session.merge_scopes(&HashMap::from([("pkg.mod".to_string(), incoming)]));
+
+        let merged = session
+            .scopes
+            .get("pkg.mod")
+            .expect("merged scope should exist");
+        assert!(merged.defs.contains_key("kept"));
+        assert!(merged.defs.contains_key("added"));
+        assert_eq!(
+            merged.all_exports,
+            Some(HashSet::from([String::from("kept")])),
+            "existing __all__ exports should not be overwritten by None"
+        );
+    }
+
+    #[test]
+    fn get_node_reuses_existing_id_and_upgrades_flavor() {
+        let filename = "pkg/mod.py".to_string();
+        let mut session = AnalysisSession::new(std::slice::from_ref(&filename), None);
+        session.filename = filename;
+
+        let generic = session.get_node(Some("pkg.mod"), "thing", Flavor::Namespace);
+        let upgraded = session.get_node(Some("pkg.mod"), "thing", Flavor::Function);
+        let sibling = session.get_node(Some("pkg.other"), "thing", Flavor::Function);
+
+        assert_eq!(
+            generic, upgraded,
+            "same namespace/name should reuse node id"
+        );
+        assert_eq!(session.nodes_arena[generic].flavor, Flavor::Function);
+        assert_ne!(generic, sibling, "different namespaces must not alias");
+        assert_eq!(session.nodes_by_name["thing"].len(), 2);
+    }
+
+    #[test]
+    fn is_local_checks_only_the_innermost_scope() {
+        let mut session = AnalysisSession::new(&[], None);
+        let mut outer = ScopeInfo::new("");
+        outer.locals.insert("outer_only".to_string());
+        session.scopes.insert("pkg".to_string(), outer);
+
+        let mut inner = ScopeInfo::new("");
+        inner.locals.insert("inner_only".to_string());
+        session.scopes.insert("pkg.fn".to_string(), inner);
+
+        session.scope_stack = vec!["pkg".to_string(), "pkg.fn".to_string()];
+
+        assert!(session.is_local("inner_only"));
+        assert!(
+            !session.is_local("outer_only"),
+            "outer locals should not count as locals in the current scope"
+        );
+    }
+
+    #[test]
+    fn process_reanalyzes_until_return_types_converge() {
+        let temp = tempdir().expect("temp dir should be created");
+        let path = temp.path().join("propagation_chain.py");
+        fs::write(
+            &path,
+            r#"
+def caller():
+    return first().make()
+
+def first():
+    return second()
+
+def second():
+    return third()
+
+def third():
+    return Product()
+
+class Product:
+    def make(self):
+        pass
+"#,
+        )
+        .expect("fixture should be written");
+
+        let files = vec![path.to_string_lossy().to_string()];
+        let cg = CallGraph::new(&files, None).expect("analysis should succeed");
+        let caller_uses = exact_uses(&cg, "propagation_chain.caller");
+
+        assert!(
+            caller_uses.contains("propagation_chain.first"),
+            "caller should keep the direct call edge"
+        );
+        assert!(
+            caller_uses.contains("propagation_chain.Product.make"),
+            "caller should resolve make() after multi-pass return propagation, got: {caller_uses:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod visitor_tests {
+    use super::*;
+
+    use std::collections::HashSet;
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    fn parse_module(source: &str) -> ModModule {
+        let parsed = ruff_python_parser::parse_unchecked(source, ParseOptions::from(Mode::Module));
+        match parsed.into_syntax() {
+            Mod::Module(module) => module,
+            _ => panic!("expected module syntax"),
+        }
+    }
+
+    fn return_expr<'a>(module: &'a ModModule, fn_name: &str) -> &'a Expr {
+        let func = module
+            .body
+            .iter()
+            .find_map(|stmt| match stmt {
+                Stmt::FunctionDef(func) if func.name.id.as_str() == fn_name => Some(func),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("missing function {fn_name}"));
+        let ret = func
+            .body
+            .iter()
+            .find_map(|stmt| match stmt {
+                Stmt::Return(ret) => ret.value.as_ref(),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("missing return expr in {fn_name}"));
+        ret
+    }
+
+    fn enter_function(session: &mut AnalysisSession, module_ns: &str, fn_name: &str) {
+        session.module_name = module_ns.to_string();
+        session.filename = format!("{module_ns}.py");
+        session.name_stack = vec![module_ns.to_string(), fn_name.to_string()];
+        session.scope_stack = vec![module_ns.to_string(), format!("{module_ns}.{fn_name}")];
+        session.context_stack = vec![
+            format!("Module {module_ns}"),
+            format!("FunctionDef {fn_name}"),
+        ];
+    }
+
+    fn has_uses_edge(cg: &CallGraph, from_suffix: &str, to_suffix: &str) -> bool {
+        for (from_id, targets) in &cg.uses_edges {
+            if cg.nodes_arena[*from_id].get_name().ends_with(from_suffix) {
+                for target in targets {
+                    if cg.nodes_arena[*target].get_name().ends_with(to_suffix) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    #[test]
+    fn build_scopes_collects_bindings_from_compound_statements() {
+        let module = parse_module(
+            r#"
+def sample(items, manager, cond):
+    total = 0
+    total += 1
+    value: int = 1
+    pair, [inner, *rest] = items
+    for first, *tail in items:
+        loop_value = first
+    if cond:
+        branch_value = total
+    else:
+        fallback_value = value
+    while cond:
+        while_value = loop_value
+    with manager as resource:
+        with_value = resource
+    try:
+        try_value = branch_value
+    except Exception as err:
+        except_value = err
+    finally:
+        final_value = total
+"#,
+        );
+
+        let scopes = AnalysisSession::build_scopes(&module, "fixture");
+        let scope = scopes.get("fixture.sample").expect("function scope");
+
+        for name in [
+            "items",
+            "manager",
+            "cond",
+            "total",
+            "value",
+            "pair",
+            "inner",
+            "rest",
+            "first",
+            "tail",
+            "branch_value",
+            "fallback_value",
+            "while_value",
+            "resource",
+            "with_value",
+            "try_value",
+            "err",
+            "except_value",
+            "final_value",
+        ] {
+            assert!(scope.defs.contains_key(name), "missing binding for {name}");
+        }
+    }
+
+    #[test]
+    fn build_scopes_collects_nested_scopes_inside_compound_statements() {
+        let module = parse_module(
+            r#"
+def outer(cond, items, manager):
+    if cond:
+        def in_if():
+            pass
+    while cond:
+        def in_while():
+            pass
+    for item in items:
+        def in_for():
+            pass
+    with manager:
+        def in_with():
+            pass
+    try:
+        def in_try():
+            pass
+    except Exception:
+        def in_except():
+            pass
+    else:
+        def in_else():
+            pass
+    finally:
+        def in_finally():
+            pass
+"#,
+        );
+
+        let scopes = AnalysisSession::build_scopes(&module, "fixture");
+        for scope_name in [
+            "fixture.outer",
+            "fixture.outer.in_if",
+            "fixture.outer.in_while",
+            "fixture.outer.in_for",
+            "fixture.outer.in_with",
+            "fixture.outer.in_try",
+            "fixture.outer.in_except",
+            "fixture.outer.in_else",
+            "fixture.outer.in_finally",
+        ] {
+            assert!(
+                scopes.contains_key(scope_name),
+                "missing nested scope {scope_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn merge_scopes_preserves_existing_all_exports() {
+        let mut session = AnalysisSession::new(&[], None);
+        let keep_id = session.get_node(Some("pkg"), "kept", Flavor::Function);
+        let extra_id = session.get_node(Some("pkg"), "extra", Flavor::Function);
+
+        let mut existing = ScopeInfo::new("pkg");
+        existing
+            .defs
+            .entry("kept".to_string())
+            .or_default()
+            .insert(keep_id);
+        existing.all_exports = Some(HashSet::from([String::from("kept")]));
+        session.scopes.insert("pkg".to_string(), existing);
+
+        let mut incoming = ScopeInfo::new("pkg");
+        incoming
+            .defs
+            .entry("extra".to_string())
+            .or_default()
+            .insert(extra_id);
+
+        let mut incoming_scopes = HashMap::new();
+        incoming_scopes.insert("pkg".to_string(), incoming);
+
+        session.merge_scopes(&incoming_scopes);
+
+        let merged = session.scopes.get("pkg").expect("merged scope");
+        assert_eq!(
+            merged.all_exports.as_ref(),
+            Some(&HashSet::from([String::from("kept")])),
+            "existing __all__ should not be cleared by an incoming scope without exports",
+        );
+        assert!(
+            merged
+                .defs
+                .get("extra")
+                .is_some_and(|values| values.iter().collect::<Vec<_>>() == vec![extra_id]),
+            "incoming defs should still be merged"
+        );
+    }
+
+    #[test]
+    fn get_node_reuses_ids_and_upgrades_flavor() {
+        let mut session = AnalysisSession::new(&[], None);
+        session.filename = "fixture.py".to_string();
+
+        let first = session.get_node(Some("pkg"), "thing", Flavor::Namespace);
+        let second = session.get_node(Some("pkg"), "thing", Flavor::Method);
+
+        assert_eq!(
+            first, second,
+            "same (namespace, name) should reuse the node id"
+        );
+        assert_eq!(
+            session.nodes_arena[first].flavor,
+            Flavor::Method,
+            "later, more-specific lookups should upgrade the stored flavor",
+        );
+    }
+
+    #[test]
+    fn is_local_reads_the_innermost_scope() {
+        let mut session = AnalysisSession::new(&[], None);
+        let mut scope = ScopeInfo::new("inner");
+        scope.locals.insert("local_value".to_string());
+        session.scopes.insert("pkg.inner".to_string(), scope);
+        session.scope_stack.push("pkg.inner".to_string());
+
+        assert!(session.is_local("local_value"));
+        assert!(!session.is_local("missing_value"));
+    }
+
+    #[test]
+    fn comprehension_visitors_return_their_namespace_nodes() {
+        let source = r#"
+def set_case(items):
+    return {item for item in items}
+
+def dict_case(items):
+    return {item: item for item in items}
+
+def gen_case(items):
+    return (item for item in items)
+"#;
+        let module = parse_module(source);
+        let line_index = LineIndex::from_source_text(source);
+
+        for (fn_name, expected_label) in [
+            ("set_case", "setcomp"),
+            ("dict_case", "dictcomp"),
+            ("gen_case", "genexpr"),
+        ] {
+            let mut session = AnalysisSession::new(&[], None);
+            session.scopes = AnalysisSession::build_scopes(&module, "fixture");
+            enter_function(&mut session, "fixture", fn_name);
+
+            let node_id = match return_expr(&module, fn_name) {
+                Expr::SetComp(expr) => session
+                    .visit_set_comp(expr, &line_index)
+                    .expect("set comp should create a namespace node"),
+                Expr::DictComp(expr) => session
+                    .visit_dict_comp(expr, &line_index)
+                    .expect("dict comp should create a namespace node"),
+                Expr::Generator(expr) => session
+                    .visit_generator(expr, &line_index)
+                    .expect("generator should create a namespace node"),
+                other => panic!("unexpected expression for {fn_name}: {other:?}"),
+            };
+
+            let parent_id = session.get_node(Some("fixture"), fn_name, Flavor::Namespace);
+            let targets = session
+                .defines_edges
+                .get(&parent_id)
+                .expect("comprehension defines edge");
+            assert!(
+                targets.contains(&node_id),
+                "{fn_name} should define its comprehension node"
+            );
+            assert_eq!(session.nodes_arena[node_id].name, expected_label);
+        }
+    }
+
+    #[test]
+    fn process_propagates_return_types_until_fixpoint() {
+        let dir = tempdir().expect("temp dir");
+        let fixture = dir.path().join("chain.py");
+        fs::write(
+            &fixture,
+            r#"
+def caller():
+    return top().ping()
+
+def top():
+    return mid()
+
+def mid():
+    return leaf()
+
+def leaf():
+    return Product()
+
+class Product:
+    def ping(self):
+        return 1
+"#,
+        )
+        .expect("write fixture");
+
+        let files = vec![fixture.to_string_lossy().to_string()];
+        let cg = CallGraph::new(&files, None).expect("analysis should succeed");
+
+        assert!(
+            has_uses_edge(&cg, "chain.caller", "chain.Product.ping"),
+            "caller should resolve ping through multiple return-propagation passes",
+        );
+    }
+
+    #[test]
+    fn process_resolves_super_calls_through_computed_mro() {
+        let dir = tempdir().expect("temp dir");
+        let fixture = dir.path().join("super_chain.py");
+        fs::write(
+            &fixture,
+            r#"
+class Base:
+    def greet(self):
+        return 1
+
+class Derived(Base):
+    def greet(self):
+        return super().greet()
+
+def call_greet():
+    inst = Derived()
+    return inst.greet()
+"#,
+        )
+        .expect("write fixture");
+
+        let files = vec![fixture.to_string_lossy().to_string()];
+        let cg = CallGraph::new(&files, None).expect("analysis should succeed");
+
+        assert!(
+            has_uses_edge(&cg, "super_chain.Derived.greet", "super_chain.Base.greet"),
+            "super() should resolve to the next class in the MRO",
+        );
+    }
+}
+
+#[cfg(test)]
+mod session_tests {
+    use super::*;
+
+    fn parse_module(src: &str) -> ModModule {
+        let parsed = ruff_python_parser::parse_unchecked(src, ParseOptions::from(Mode::Module));
+        match parsed.into_syntax() {
+            Mod::Module(module) => module,
+            _ => panic!("expected module AST"),
+        }
+    }
+
+    #[test]
+    fn build_scopes_collects_compound_bindings_and_nested_scopes() {
+        let module = parse_module(
+            r#"
+counter = 0
+counter += 1
+value: int = 1
+for item, (left, *rest) in items:
+    pass
+if cond:
+    from_if = 1
+elif other:
+    from_elif = 2
+else:
+    from_else = 3
+while cond:
+    from_while = 4
+else:
+    from_while_else = 5
+with ctx() as manager, other() as (a, b):
+    from_with = 6
+try:
+    from_try = 7
+except Err as exc:
+    from_except = 8
+else:
+    from_try_else = 9
+finally:
+    from_finally = 10
+
+def outer(posonly, /, arg, *va, kw, **kwarg):
+    def nested():
+        pass
+
+    class Inner:
+        pass
+
+    if flag:
+        def in_if():
+            pass
+
+    while flag:
+        def in_while():
+            pass
+
+    for thing in items:
+        def in_for():
+            pass
+
+    with ctx() as bound:
+        def in_with():
+            pass
+
+    try:
+        def in_try():
+            pass
+    except Err:
+        def in_except():
+            pass
+    else:
+        def in_else():
+            pass
+    finally:
+        def in_finally():
+            pass
+"#,
+        );
+
+        let scopes = AnalysisSession::build_scopes(&module, "pkg.mod");
+        let module_scope = scopes.get("pkg.mod").expect("module scope present");
+        for name in [
+            "counter",
+            "value",
+            "item",
+            "left",
+            "rest",
+            "from_if",
+            "from_elif",
+            "from_else",
+            "from_while",
+            "from_while_else",
+            "manager",
+            "a",
+            "b",
+            "from_with",
+            "from_try",
+            "exc",
+            "from_except",
+            "from_try_else",
+            "from_finally",
+            "outer",
+        ] {
+            assert!(
+                module_scope.defs.contains_key(name),
+                "module scope should define {name}"
+            );
+        }
+
+        let outer_scope = scopes.get("pkg.mod.outer").expect("outer scope present");
+        for name in [
+            "posonly",
+            "arg",
+            "va",
+            "kw",
+            "kwarg",
+            "nested",
+            "Inner",
+            "thing",
+            "bound",
+            "in_if",
+            "in_while",
+            "in_with",
+            "in_try",
+            "in_except",
+            "in_else",
+            "in_finally",
+        ] {
+            assert!(
+                outer_scope.defs.contains_key(name),
+                "outer scope should define {name}"
+            );
+        }
+
+        for ns in [
+            "pkg.mod.outer.nested",
+            "pkg.mod.outer.Inner",
+            "pkg.mod.outer.in_if",
+            "pkg.mod.outer.in_while",
+            "pkg.mod.outer.in_for",
+            "pkg.mod.outer.in_with",
+            "pkg.mod.outer.in_try",
+            "pkg.mod.outer.in_except",
+            "pkg.mod.outer.in_else",
+            "pkg.mod.outer.in_finally",
+        ] {
+            assert!(scopes.contains_key(ns), "missing nested scope {ns}");
+        }
+    }
+
+    #[test]
+    fn merge_scopes_preserves_existing_all_exports() {
+        let mut session = AnalysisSession::new(&[], None);
+
+        let mut existing = ScopeInfo::new("");
+        existing.all_exports = Some(HashSet::from([String::from("keep")]));
+        session.scopes.insert(String::from("pkg.mod"), existing);
+
+        let mut incoming = ScopeInfo::new("");
+        incoming.all_exports = Some(HashSet::from([String::from("replace")]));
+        session
+            .scopes
+            .get_mut("pkg.mod")
+            .expect("existing scope")
+            .defs
+            .insert(String::from("current"), ValueSet::empty());
+
+        let incoming_scopes = HashMap::from([(String::from("pkg.mod"), incoming)]);
+        session.merge_scopes(&incoming_scopes);
+
+        let merged = session.scopes.get("pkg.mod").expect("merged scope");
+        assert_eq!(
+            merged.all_exports.as_ref(),
+            Some(&HashSet::from([String::from("keep")])),
+            "existing __all__ should not be overwritten"
+        );
+    }
+
+    #[test]
+    fn get_node_reuses_identity_and_only_upgrades_flavor() {
+        let mut session = AnalysisSession::new(&[], None);
+        session.filename = String::from("fixture.py");
+
+        let id = session.get_node(Some("pkg.mod"), "thing", Flavor::Namespace);
+        let upgraded = session.get_node(Some("pkg.mod"), "thing", Flavor::Method);
+        let downgraded = session.get_node(Some("pkg.mod"), "thing", Flavor::Name);
+
+        assert_eq!(id, upgraded, "node lookup should reuse the same node id");
+        assert_eq!(
+            id, downgraded,
+            "node lookup should stay keyed by namespace+name"
+        );
+        assert_eq!(session.nodes_arena[id].flavor, Flavor::Method);
+    }
+
+    #[test]
+    fn is_local_checks_current_scope_locals() {
+        let mut session = AnalysisSession::new(&[], None);
+        let mut scope = ScopeInfo::new("");
+        scope.locals.insert(String::from("local_name"));
+        session.scopes.insert(String::from("pkg.mod"), scope);
+        session.scope_stack.push(String::from("pkg.mod"));
+
+        assert!(session.is_local("local_name"));
+        assert!(!session.is_local("missing"));
     }
 }

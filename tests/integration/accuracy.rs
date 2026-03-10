@@ -80,6 +80,15 @@ fn test_accuracy_factory_return_method() {
     );
 }
 
+#[test]
+fn test_accuracy_multi_pass_return_propagation_depth() {
+    let cg = make_single_fixture_graph("propagation_depth.py");
+    assert!(
+        has_uses_edge(&cg, "consumer", "make"),
+        "consumer should use Product.make through outer -> middle -> inner propagation"
+    );
+}
+
 // -------------------------------------------------------------------
 // Decorator flow accuracy
 //
@@ -1032,7 +1041,6 @@ fn test_expand_unknowns_scoped_by_concrete_resolution() {
 /// Helper: check that at most `max_count` distinct uses targets exist for a node.
 /// Used to verify that wildcard expansion does not globally fan out.
 
-
 /// INV-2 precision: the number of *concrete* (namespaced) `do_work` uses from
 /// `precision_caller` must be exactly 1 (WorkerA only), not more.
 /// Wildcards (*.do_work) are expected from the bare `do_work()` call and are
@@ -1066,6 +1074,30 @@ fn test_expand_unknowns_fanout_count_bounded() {
         concrete_do_work_count <= 1,
         "precision_caller should use at most 1 concrete 'do_work' node (WorkerA only), \
          got {concrete_do_work_count} — wildcard expansion is too broad"
+    );
+}
+
+#[test]
+fn test_expand_unknowns_materializes_concrete_targets_without_local_resolution() {
+    let cg = make_single_fixture_graph("unknown_expansion.py");
+    let uses = get_full_uses(&cg, "wildcard_only");
+
+    assert!(
+        uses.contains("test_code.unknown_expansion.WorkerA.do_work"),
+        "wildcard_only should fan out to WorkerA.do_work, got: {uses:?}"
+    );
+    assert!(
+        uses.contains("test_code.unknown_expansion.WorkerB.do_work"),
+        "wildcard_only should fan out to WorkerB.do_work, got: {uses:?}"
+    );
+
+    let concrete_count = uses
+        .iter()
+        .filter(|name| name.ends_with(".do_work"))
+        .count();
+    assert_eq!(
+        concrete_count, 2,
+        "wildcard_only should resolve to exactly two concrete do_work targets"
     );
 }
 

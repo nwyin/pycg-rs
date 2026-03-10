@@ -225,6 +225,16 @@ fn test_resolution_subscript_call() {
     );
 }
 
+#[test]
+fn test_resolution_super_targets_parent_method() {
+    let cg = make_fixture_graph("super_coverage.py");
+    let uses = get_full_uses(&cg, "Derived.greet");
+    assert!(
+        uses.contains("test_code.super_coverage.Base.greet"),
+        "Derived.greet should resolve super().greet() to Base.greet, got: {uses:?}"
+    );
+}
+
 // ===================================================================
 // Postprocessing effects
 // ===================================================================
@@ -232,15 +242,54 @@ fn test_resolution_subscript_call() {
 #[test]
 fn test_postprocess_cull_inherited() {
     let cg = make_fixture_graph("postprocess_effects.py");
-    // caller_uses_child calls c.inherited_method() — after cull_inherited,
-    // the edge should target a concrete method, not be duplicated.
+    let uses = get_full_uses(&cg, "caller_uses_child");
+    let inherited_targets: Vec<_> = uses
+        .iter()
+        .filter(|name| name.ends_with(".inherited_method"))
+        .cloned()
+        .collect();
+
     assert!(
-        has_uses_edge(&cg, "caller_uses_child", "inherited_method"),
-        "inherited method call must resolve"
+        uses.contains("test_code.postprocess_effects.Parent.inherited_method"),
+        "inherited method call must resolve concretely, got: {uses:?}"
+    );
+    assert_eq!(
+        inherited_targets.len(),
+        1,
+        "cull_inherited should leave exactly one inherited_method target, got: {inherited_targets:?}"
     );
     assert!(
         has_uses_edge(&cg, "caller_uses_child", "own_method"),
         "own method call must resolve"
+    );
+}
+
+#[test]
+fn test_postprocess_expand_unknowns_creates_concrete_edges() {
+    let cg = make_fixture_graph("postprocess_exactness.py");
+    let uses = get_full_uses(&cg, "wildcard_ping_caller");
+    let ping_targets: HashSet<_> = uses
+        .iter()
+        .filter(|name| name.ends_with(".ping"))
+        .cloned()
+        .collect();
+    assert_eq!(
+        ping_targets,
+        HashSet::from([
+            String::from("test_code.postprocess_exactness.Child.ping"),
+            String::from("test_code.postprocess_exactness.Sibling.ping"),
+        ]),
+        "wildcard expansion should produce the concrete ping targets that remain after cull_inherited"
+    );
+}
+
+#[test]
+fn test_postprocess_cull_inherited_removes_parent_duplicate() {
+    let cg = make_fixture_graph("postprocess_exactness.py");
+    let uses = get_full_uses(&cg, "wildcard_ping_caller");
+    assert!(
+        !uses.contains("test_code.postprocess_exactness.Parent.ping"),
+        "cull_inherited should remove Parent.ping when Child.ping is also present, got: {uses:?}"
     );
 }
 
@@ -264,15 +313,47 @@ fn test_postprocess_collapse_inner_listcomp() {
 
 #[test]
 fn test_postprocess_resolve_imports() {
-    // Use the full test_code dir which has real cross-module imports.
-    let cg = make_call_graph(&test_code_dir());
-    // submodule1 does: from test_code.subpackage1 import A
-    // After resolve_imports, the edge should point to a concrete node.
-    let uses = get_uses(&cg, "submodule1");
+    let cg = make_multi_fixture_graph(&[
+        "test_code/accuracy_reexport/__init__.py",
+        "test_code/accuracy_reexport/impl.py",
+        "test_code/accuracy_reexport/user.py",
+    ]);
+    let uses = get_full_uses(&cg, "reexport_caller");
     assert!(
-        uses.contains("A") || uses.contains("subpackage1"),
-        "import resolution must produce concrete edge, got: {:?}",
+        uses.contains("test_code.accuracy_reexport.impl.reexport_func"),
+        "import resolution must remap reexport_caller to the concrete implementation, got: {:?}",
         uses
+    );
+    let imported_item_count = cg
+        .nodes_arena
+        .iter()
+        .filter(|node| {
+            node.name == "reexport_func" && node.flavor == pycg_rs::node::Flavor::ImportedItem
+        })
+        .count();
+    assert_eq!(
+        imported_item_count, 0,
+        "resolve_imports should not leave ImportedItem placeholders for reexport_func"
+    );
+}
+
+#[test]
+fn test_postprocess_resolve_imports_module_alias_to_concrete_class() {
+    let cg = make_call_graph(&test_code_dir());
+    let uses = get_full_uses(&cg, "submodule1");
+    let class_targets: HashSet<_> = uses
+        .iter()
+        .filter(|name| name.ends_with(".A"))
+        .cloned()
+        .collect();
+    assert!(
+        uses.contains("test_code.subpackage1"),
+        "submodule1 should keep the package module edge, got: {uses:?}"
+    );
+    assert_eq!(
+        class_targets,
+        HashSet::from([String::from("test_code.subpackage1.submodule1.A")]),
+        "resolve_imports should remap A to the concrete class implementation"
     );
 }
 

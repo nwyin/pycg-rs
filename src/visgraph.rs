@@ -586,4 +586,31 @@ mod tests {
         assert_eq!(vg.subgraphs[0].nodes.len(), 1);
         assert_eq!(vg.subgraphs[1].nodes.len(), 1);
     }
+
+    #[test]
+    fn test_from_call_graph_grouped_annotated_labels_include_locations() {
+        let nodes_arena =
+            vec![Node::new(Some("pkg"), "A", Flavor::Class).with_location("pkg.py", 7)];
+        let defined = HashSet::from([0]);
+
+        let options = VisualOptions {
+            draw_defines: false,
+            draw_uses: false,
+            colored: false,
+            grouped: true,
+            annotated: true,
+        };
+
+        let vg = VisualGraph::from_call_graph(
+            &nodes_arena,
+            &defined,
+            &HashMap::new(),
+            &HashMap::new(),
+            &options,
+        );
+
+        let label = &vg.subgraphs[0].nodes[0].label;
+        assert!(label.contains("A"));
+        assert!(label.contains("pkg.py:7"));
+    }
 }

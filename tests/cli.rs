@@ -56,8 +56,14 @@ fn cli_defaults_to_uses_edges_only() {
     .clone();
 
     let stdout = String::from_utf8(output).expect("stdout should be utf8");
-    assert!(stdout.contains("[U]"), "default output should include uses edges");
-    assert!(!stdout.contains("[D]"), "default output should not include defines edges");
+    assert!(
+        stdout.contains("[U]"),
+        "default output should include uses edges"
+    );
+    assert!(
+        !stdout.contains("[D]"),
+        "default output should not include defines edges"
+    );
 }
 
 #[test]
@@ -78,8 +84,14 @@ fn cli_can_render_defines_and_uses() {
     .clone();
 
     let stdout = String::from_utf8(output).expect("stdout should be utf8");
-    assert!(stdout.contains("[U]"), "combined output should include uses edges");
-    assert!(stdout.contains("[D]"), "combined output should include defines edges");
+    assert!(
+        stdout.contains("[U]"),
+        "combined output should include uses edges"
+    );
+    assert!(
+        stdout.contains("[D]"),
+        "combined output should include defines edges"
+    );
 }
 
 #[test]
