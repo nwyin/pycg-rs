@@ -33,8 +33,6 @@ use crate::scope::ValueSet;
 /// Bindings are unioned on rebind (no last-writer-wins).
 #[derive(Debug, Clone)]
 struct ScopeInfo {
-    #[allow(dead_code)]
-    name: String,
     defs: HashMap<String, ValueSet>,
     /// Shallow container facts for locally-bound names/attributes.
     ///
@@ -150,9 +148,8 @@ impl ContainerFacts {
 }
 
 impl ScopeInfo {
-    fn new(name: &str) -> Self {
+    fn new(_name: &str) -> Self {
         Self {
-            name: name.to_string(),
             defs: HashMap::new(),
             containers: HashMap::new(),
             locals: HashSet::new(),
@@ -160,14 +157,13 @@ impl ScopeInfo {
         }
     }
 
-    fn from_names(name: &str, identifiers: &HashSet<String>) -> Self {
+    fn from_names(_name: &str, identifiers: &HashSet<String>) -> Self {
         let defs = identifiers
             .iter()
             .map(|id| (id.clone(), ValueSet::empty()))
             .collect();
         let locals = identifiers.clone();
         Self {
-            name: name.to_string(),
             defs,
             containers: HashMap::new(),
             locals,
