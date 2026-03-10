@@ -159,4 +159,4 @@ This is a standalone CLI/library that already covers a substantial subset of Pyt
 
 ## License
 
-GPL-2.0-or-later (same as pyan3)
+MIT
