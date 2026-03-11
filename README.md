@@ -38,32 +38,32 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 ```bash
 # Analyze a package and print a plain-text dependency list
-pycg mypackage/ --format text
+pycg analyze mypackage/ --format text
 
 # Emit machine-readable JSON
-pycg mypackage/ --format json > graph.json
+pycg analyze mypackage/ --format json > graph.json
 
 # Render an SVG with GraphViz
-pycg mypackage/ --defines --uses --grouped --annotated mypackage/ | dot -Tsvg -o callgraph.svg
+pycg analyze mypackage/ --defines --uses --grouped --annotated mypackage/ | dot -Tsvg -o callgraph.svg
 ```
 
 ## Usage
 
 ```bash
 # Analyze Python files, output DOT format (default)
-pycg src/**/*.py
+pycg analyze src/**/*.py
 
 # Output as plain text dependency list
-pycg mypackage/ --format text
+pycg analyze mypackage/ --format text
 
 # Analyze a package and keep module names rooted at the repo src dir
-pycg mypackage/ --root .
+pycg analyze mypackage/ --root .
 
 # Show both defines and uses edges, colored by file
-pycg mypackage/ -d -u --colored --grouped
+pycg analyze mypackage/ -d -u --colored --grouped
 
 # Pipe DOT to graphviz for SVG
-pycg mypackage/ | dot -Tsvg -o callgraph.svg
+pycg analyze mypackage/ | dot -Tsvg -o callgraph.svg
 ```
 
 ### Options
@@ -94,19 +94,19 @@ If neither `--defines` nor `--uses` is specified, uses edges are shown by defaul
 
 ```bash
 # Inspect call dependencies in a package
-pycg src/
+pycg analyze src/
 
 # Show only defines edges
-pycg src/ --defines
+pycg analyze src/ --defines
 
 # Render a grouped, annotated SVG
-pycg src/ --root . --defines --uses --grouped --annotated | dot -Tsvg -o callgraph.svg
+pycg analyze src/ --root . --defines --uses --grouped --annotated | dot -Tsvg -o callgraph.svg
 
 # Module-level import dependency graph
-pycg src/ --modules | dot -Tsvg -o imports.svg
+pycg analyze src/ --modules | dot -Tsvg -o imports.svg
 
 # Debug analyzer decisions
-pycg src/ -vv
+pycg analyze src/ -vv
 ```
 
 ## Output formats
@@ -119,7 +119,7 @@ pycg src/ -vv
 Example JSON workflow:
 
 ```bash
-pycg mypackage/ --format json > graph.json
+pycg analyze mypackage/ --format json > graph.json
 jq '.stats' graph.json
 ```
 

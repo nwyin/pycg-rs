@@ -88,6 +88,7 @@ fn run_pycg(args: &[&str]) -> assert_cmd::assert::Assert {
 fn cli_defaults_to_uses_edges_only() {
     let fixture = fixture_path("tests/test_code/accuracy_factory.py");
     let output = run_pycg(&[
+        "analyze",
         fixture.to_str().unwrap(),
         "--format",
         "text",
@@ -114,6 +115,7 @@ fn cli_defaults_to_uses_edges_only() {
 fn cli_can_render_defines_and_uses() {
     let fixture = fixture_path("tests/test_code/accuracy_factory.py");
     let output = run_pycg(&[
+        "analyze",
         fixture.to_str().unwrap(),
         "--format",
         "text",
@@ -142,6 +144,7 @@ fn cli_can_render_defines_and_uses() {
 fn cli_json_snapshot_symbol_graph() {
     let fixture = fixture_path("tests/test_code/accuracy_factory.py");
     let output = run_pycg(&[
+        "analyze",
         fixture.to_str().unwrap(),
         "--format",
         "json",
@@ -166,6 +169,7 @@ fn cli_json_snapshot_symbol_graph() {
 fn cli_json_snapshot_module_graph() {
     let fixture = fixture_path("tests/test_code/import_coverage");
     let output = run_pycg(&[
+        "analyze",
         fixture.to_str().unwrap(),
         "--format",
         "json",
@@ -190,7 +194,7 @@ fn cli_json_snapshot_module_graph() {
 #[test]
 fn cli_errors_when_no_python_files_are_found() {
     let empty_dir = tempdir().expect("temp dir should be created");
-    let output = run_pycg(&[empty_dir.path().to_str().unwrap()])
+    let output = run_pycg(&["analyze", empty_dir.path().to_str().unwrap()])
         .failure()
         .get_output()
         .clone();
@@ -205,6 +209,7 @@ fn cli_errors_when_no_python_files_are_found() {
 fn cli_json_reports_external_references() {
     let fixture = fixture_path("tests/test_code/regression_issue5.py");
     let output = run_pycg(&[
+        "analyze",
         fixture.to_str().unwrap(),
         "--format",
         "json",
@@ -243,6 +248,7 @@ fn cli_json_reports_external_references() {
 fn cli_json_reports_external_references_in_module_mode() {
     let fixture = fixture_path("tests/test_code/regression_issue5.py");
     let output = run_pycg(&[
+        "analyze",
         fixture.to_str().unwrap(),
         "--format",
         "json",
@@ -284,6 +290,7 @@ fn cli_json_reports_unresolved_references() {
     let src = fixture_path("tests/test_code/star_private_src.py");
     let user = fixture_path("tests/test_code/star_private_user.py");
     let output = run_pycg(&[
+        "analyze",
         src.to_str().unwrap(),
         user.to_str().unwrap(),
         "--format",
@@ -322,6 +329,7 @@ fn cli_json_reports_unresolved_references() {
 fn cli_json_suppresses_external_and_synthetic_unresolved_noise() {
     let fixture = fixture_path("tests/test_code/regression_issue5.py");
     let output = run_pycg(&[
+        "analyze",
         fixture.to_str().unwrap(),
         "--format",
         "json",
@@ -353,6 +361,7 @@ fn cli_json_suppresses_external_and_synthetic_unresolved_noise() {
 fn cli_json_reports_ambiguous_resolutions_and_approximations() {
     let fixture = fixture_path("tests/test_code/accuracy_multi_return.py");
     let output = run_pycg(&[
+        "analyze",
         fixture.to_str().unwrap(),
         "--format",
         "json",
@@ -415,6 +424,7 @@ fn cli_json_reports_ambiguous_resolutions_and_approximations() {
 fn cli_json_reports_three_way_ambiguity() {
     let fixture = fixture_path("tests/test_code/diagnostics_multi_return_three.py");
     let output = run_pycg(&[
+        "analyze",
         fixture.to_str().unwrap(),
         "--format",
         "json",

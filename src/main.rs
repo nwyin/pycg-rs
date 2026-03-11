@@ -16,50 +16,17 @@ use pycg_rs::writer::{self, JsonGraphMode, JsonOutputOptions};
 #[command(
     name = "pycg",
     about = "Generate call graphs for Python programs",
-    subcommand_precedence_over_arg = true
+    subcommand_precedence_over_arg = true,
+    subcommand_required = true,
+    arg_required_else_help = true
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Command>,
-
-    /// Python source files or directories to analyze
-    files: Vec<PathBuf>,
-
-    /// Output format
-    #[arg(long, default_value = "dot")]
-    format: Format,
-
-    /// Draw defines edges
-    #[arg(long, short = 'd')]
-    defines: bool,
-
-    /// Draw uses edges
-    #[arg(long, short = 'u')]
-    uses: bool,
-
-    /// Color nodes by file
-    #[arg(long, short = 'c')]
-    colored: bool,
-
-    /// Group nodes by namespace
-    #[arg(long, short = 'g')]
-    grouped: bool,
-
-    /// Annotate nodes with file:line info
-    #[arg(long, short = 'a')]
-    annotated: bool,
+    command: Command,
 
     /// Root directory for module name resolution
     #[arg(long, short = 'r', global = true)]
     root: Option<String>,
-
-    /// GraphViz rank direction
-    #[arg(long, default_value = "TB")]
-    rankdir: String,
-
-    /// Show module-level import dependencies instead of symbol-level call graph
-    #[arg(long, short = 'm')]
-    modules: bool,
 
     /// Enable verbose logging
     #[arg(long, short = 'v', action = clap::ArgAction::Count, global = true)]
@@ -241,8 +208,8 @@ fn main() -> Result<()> {
     env_logger::Builder::new().filter_level(log_level).init();
 
     let (output, should_fail) = match &cli.command {
-        Some(Command::Analyze(args)) => (run_analyze(args, cli.root.as_deref())?, false),
-        Some(Command::SymbolsIn(args)) => {
+        Command::Analyze(args) => (run_analyze(args, cli.root.as_deref())?, false),
+        Command::SymbolsIn(args) => {
             run_target_query(&args.files, cli.root.as_deref(), |cg, json_inputs| {
                 let response = query::symbols_in(
                     &cg,
@@ -264,7 +231,7 @@ fn main() -> Result<()> {
                 ))
             })?
         }
-        Some(Command::Summary(args)) => {
+        Command::Summary(args) => {
             run_target_query(&args.files, cli.root.as_deref(), |cg, json_inputs| {
                 let response = query::summary(
                     &cg,
@@ -286,7 +253,7 @@ fn main() -> Result<()> {
                 ))
             })?
         }
-        Some(Command::Callees(args)) => {
+        Command::Callees(args) => {
             run_target_query(&args.files, cli.root.as_deref(), |cg, json_inputs| {
                 let response = query::callees(
                     &cg,
@@ -303,7 +270,7 @@ fn main() -> Result<()> {
                 ))
             })?
         }
-        Some(Command::Callers(args)) => {
+        Command::Callers(args) => {
             run_target_query(&args.files, cli.root.as_deref(), |cg, json_inputs| {
                 let response = query::callers(
                     &cg,
@@ -320,7 +287,7 @@ fn main() -> Result<()> {
                 ))
             })?
         }
-        Some(Command::Neighbors(args)) => {
+        Command::Neighbors(args) => {
             run_target_query(&args.files, cli.root.as_deref(), |cg, json_inputs| {
                 let response = query::neighbors(
                     &cg,
@@ -337,7 +304,7 @@ fn main() -> Result<()> {
                 ))
             })?
         }
-        Some(Command::Path(args)) => {
+        Command::Path(args) => {
             run_target_query(&args.files, cli.root.as_deref(), |cg, json_inputs| {
                 let response = query::path(
                     &cg,
@@ -354,20 +321,6 @@ fn main() -> Result<()> {
                     response.is_error(),
                 ))
             })?
-        }
-        None => {
-            let args = AnalyzeArgs {
-                files: cli.files.clone(),
-                format: cli.format.clone(),
-                defines: cli.defines,
-                uses: cli.uses,
-                colored: cli.colored,
-                grouped: cli.grouped,
-                annotated: cli.annotated,
-                rankdir: cli.rankdir.clone(),
-                modules: cli.modules,
-            };
-            (run_analyze(&args, cli.root.as_deref())?, false)
         }
     };
 
