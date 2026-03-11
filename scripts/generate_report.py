@@ -57,7 +57,7 @@ def run_pycg_json(pycg_bin: str, source_dir: Path) -> dict | None:
     try:
         start = time.monotonic()
         result = subprocess.run(
-            [pycg_bin, str(source_dir), "--format", "json"],
+            [pycg_bin, "analyze", str(source_dir), "--format", "json"],
             capture_output=True, text=True, timeout=120,
         )
         elapsed = time.monotonic() - start
@@ -76,7 +76,7 @@ def run_pycg_svg(pycg_bin: str, source_dir: Path) -> str | None:
     """Run pycg --modules --colored | dot -Tsvg, return SVG string or None."""
     try:
         pycg_proc = subprocess.run(
-            [pycg_bin, str(source_dir), "--modules", "--colored", "--format", "dot"],
+            [pycg_bin, "analyze", str(source_dir), "--modules", "--colored", "--format", "dot"],
             capture_output=True, text=True, timeout=120,
         )
         if pycg_proc.returncode != 0:
