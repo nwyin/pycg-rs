@@ -133,6 +133,8 @@ enum ContainerFact {
 #[derive(Debug, Clone, Default)]
 struct ContainerFacts(Vec<ContainerFact>);
 
+static EMPTY_CONTAINER_FACTS: ContainerFacts = ContainerFacts(Vec::new());
+
 impl ContainerFacts {
     fn is_empty(&self) -> bool {
         self.0.is_empty()
@@ -830,9 +832,9 @@ impl AnalysisSession {
             // Try scope-based resolution: look up the name in the source
             // module's accumulated scope.  This propagates re-exports and
             // alias chains without needing an extra remap pass.
-            let resolved = self.lookup_values_in_scope(&tgt_name, &item_name);
+            let resolved: Vec<NodeId> = self.lookup_values_in_scope(&tgt_name, &item_name).iter().collect();
             if !resolved.is_empty() {
-                for id in resolved.iter() {
+                for id in resolved {
                     self.set_value(&alias_name, Some(id));
                     self.add_uses_edge(from_node, id);
                     debug!(
@@ -1412,7 +1414,7 @@ impl AnalysisSession {
     fn visit_name(&mut self, node: &ExprName, _line_index: &LineIndex) -> Option<NodeId> {
         if node.ctx == ExprContext::Load {
             let tgt_name = node.id.to_string();
-            let values = self.get_values(&tgt_name);
+            let values: Vec<NodeId> = self.get_values(&tgt_name).iter().collect();
             let current_class = self.get_current_class();
 
             if values.is_empty() {
@@ -1436,7 +1438,7 @@ impl AnalysisSession {
             // Emit a uses edge for every value in the set (INV-1 / INV-2).
             let from_node = self.get_node_of_current_namespace();
             let mut first = None;
-            for to in values.iter() {
+            for &to in &values {
                 // Do not add a uses edge to the containing class itself.
                 if let Some(cls) = current_class
                     && to == cls

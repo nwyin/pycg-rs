@@ -120,30 +120,30 @@ impl AnalysisSession {
         self.lookup_values_in_scope(ns, name).first()
     }
 
-    pub(super) fn lookup_values_in_scope(&self, ns: &str, name: &str) -> ValueSet {
+    pub(super) fn lookup_values_in_scope(&self, ns: &str, name: &str) -> &ValueSet {
         let ns_sym = self.graph.interner.lookup(ns);
         let name_sym = self.graph.interner.lookup(name);
         if let (Some(ns_sym), Some(name_sym)) = (ns_sym, name_sym) {
             if let Some(scope) = self.scopes.get(&ns_sym)
                 && let Some(vs) = scope.defs.get(&name_sym)
             {
-                return vs.clone();
+                return vs;
             }
         }
-        ValueSet::empty()
+        ValueSet::empty_ref()
     }
 
-    pub(super) fn lookup_containers_in_scope(&self, ns: &str, name: &str) -> ContainerFacts {
+    pub(super) fn lookup_containers_in_scope(&self, ns: &str, name: &str) -> &ContainerFacts {
         let ns_sym = self.graph.interner.lookup(ns);
         let name_sym = self.graph.interner.lookup(name);
         if let (Some(ns_sym), Some(name_sym)) = (ns_sym, name_sym) {
             if let Some(scope) = self.scopes.get(&ns_sym)
                 && let Some(facts) = scope.containers.get(&name_sym)
             {
-                return facts.clone();
+                return facts;
             }
         }
-        ContainerFacts::default()
+        &EMPTY_CONTAINER_FACTS
     }
 
     pub(super) fn set_attribute(&mut self, expr: &ExprAttribute, value: Option<NodeId>) -> bool {
@@ -206,8 +206,8 @@ impl AnalysisSession {
     pub(super) fn resolve_shallow_value(&mut self, expr: &Expr) -> ShallowValue {
         match expr {
             Expr::Name(node) if node.ctx == ExprContext::Load => ShallowValue {
-                values: self.get_values(node.id.as_ref()),
-                containers: self.get_containers(node.id.as_ref()),
+                values: self.get_values(node.id.as_ref()).clone(),
+                containers: self.get_containers(node.id.as_ref()).clone(),
             },
             Expr::Attribute(node) if node.ctx == ExprContext::Load => {
                 let mut resolved = ShallowValue::default();

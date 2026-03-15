@@ -17,10 +17,18 @@ use crate::{FxHashMap, FxHashSet};
 #[derive(Debug, Clone, Default)]
 pub struct ValueSet(Vec<usize>);
 
+/// A static empty ValueSet for returning references when no value is found.
+static EMPTY_VALUE_SET: ValueSet = ValueSet(Vec::new());
+
 impl ValueSet {
     /// Create an empty set (name declared but unresolved).
     pub fn empty() -> Self {
         Self(Vec::new())
+    }
+
+    /// Return a reference to a static empty ValueSet.
+    pub fn empty_ref() -> &'static ValueSet {
+        &EMPTY_VALUE_SET
     }
 
     /// Create a singleton set.

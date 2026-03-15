@@ -266,32 +266,32 @@ impl AnalysisSession {
         self.get_values(name).first()
     }
 
-    pub(super) fn get_values(&self, name: &str) -> ValueSet {
+    pub(super) fn get_values(&self, name: &str) -> &ValueSet {
         let Some(name_sym) = self.graph.interner.lookup(name) else {
-            return ValueSet::empty();
+            return ValueSet::empty_ref();
         };
         for scope_key in self.scope_stack.iter().rev() {
             if let Some(scope) = self.scopes.get(scope_key)
                 && let Some(vs) = scope.defs.get(&name_sym)
             {
-                return vs.clone();
+                return vs;
             }
         }
-        ValueSet::empty()
+        ValueSet::empty_ref()
     }
 
-    pub(super) fn get_containers(&self, name: &str) -> ContainerFacts {
+    pub(super) fn get_containers(&self, name: &str) -> &ContainerFacts {
         let Some(name_sym) = self.graph.interner.lookup(name) else {
-            return ContainerFacts::default();
+            return &EMPTY_CONTAINER_FACTS;
         };
         for scope_key in self.scope_stack.iter().rev() {
             if let Some(scope) = self.scopes.get(scope_key)
                 && let Some(facts) = scope.containers.get(&name_sym)
             {
-                return facts.clone();
+                return facts;
             }
         }
-        ContainerFacts::default()
+        &EMPTY_CONTAINER_FACTS
     }
 
     pub(super) fn set_value(&mut self, name: &str, value: Option<NodeId>) {
