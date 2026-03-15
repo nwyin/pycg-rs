@@ -76,7 +76,11 @@ impl AnalysisSession {
         self.uses_edges.push(FxHashSet::default());
         self.defines_edges.push(FxHashSet::default());
         self.node_ids_by_key.insert(key, id);
-        self.graph.nodes_by_name.entry(name_sym).or_default().push(id);
+        self.graph
+            .nodes_by_name
+            .entry(name_sym)
+            .or_default()
+            .push(id);
         id
     }
 
@@ -105,10 +109,7 @@ impl AnalysisSession {
         name: SymId,
         flavor: Flavor,
     ) -> NodeId {
-        let key = NodeKey {
-            namespace,
-            name,
-        };
+        let key = NodeKey { namespace, name };
         if let Some(&id) = self.node_ids_by_key.get(&key) {
             let n = &self.graph.nodes_arena[id];
             if flavor.specificity() > n.flavor.specificity() {
@@ -314,13 +315,13 @@ impl AnalysisSession {
             return;
         }
 
-        if let Some(&scope_key) = self.scope_stack.last() {
-            if let Some(scope) = self.scopes.get_mut(&scope_key) {
-                if let Some(id) = value {
-                    scope.defs.entry(name_sym).or_default().insert(id);
-                } else {
-                    scope.defs.entry(name_sym).or_default();
-                }
+        if let Some(&scope_key) = self.scope_stack.last()
+            && let Some(scope) = self.scopes.get_mut(&scope_key)
+        {
+            if let Some(id) = value {
+                scope.defs.entry(name_sym).or_default().insert(id);
+            } else {
+                scope.defs.entry(name_sym).or_default();
             }
         }
     }
@@ -355,14 +356,14 @@ impl AnalysisSession {
             return;
         }
 
-        if let Some(&scope_key) = self.scope_stack.last() {
-            if let Some(scope) = self.scopes.get_mut(&scope_key) {
-                scope
-                    .containers
-                    .entry(name_sym)
-                    .or_default()
-                    .union_with(containers);
-            }
+        if let Some(&scope_key) = self.scope_stack.last()
+            && let Some(scope) = self.scopes.get_mut(&scope_key)
+        {
+            scope
+                .containers
+                .entry(name_sym)
+                .or_default()
+                .union_with(containers);
         }
     }
 

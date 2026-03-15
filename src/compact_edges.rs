@@ -1,5 +1,5 @@
-use crate::node::NodeId;
 use crate::FxHashSet;
+use crate::node::NodeId;
 
 /// A frozen, sorted set of `NodeId`s for read-only edge storage.
 ///

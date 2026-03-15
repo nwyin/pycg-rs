@@ -8,8 +8,8 @@ use crate::compact_edges::CompactEdgeSet;
 use crate::intern::Interner;
 use crate::node::{Node, NodeId};
 use crate::visgraph::{VisualGraph, VisualNode};
-use serde::Serialize;
 use crate::{FxHashMap, FxHashSet};
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
@@ -424,11 +424,18 @@ fn public_kind(node: &Node) -> Option<String> {
     }
 }
 
-fn node_name_and_namespace(node: &Node, canonical_name: &str, interner: &Interner) -> (String, Option<String>) {
+fn node_name_and_namespace(
+    node: &Node,
+    canonical_name: &str,
+    interner: &Interner,
+) -> (String, Option<String>) {
     if let Some(ns_id) = node.namespace {
         let ns_str = interner.resolve(ns_id);
         if !ns_str.is_empty() {
-            return (interner.resolve(node.name).to_owned(), Some(ns_str.to_owned()));
+            return (
+                interner.resolve(node.name).to_owned(),
+                Some(ns_str.to_owned()),
+            );
         }
     }
 
@@ -451,6 +458,7 @@ fn diagnostic_location(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_json_diagnostics(
     nodes_arena: &[Node],
     defined: &FxHashSet<NodeId>,
@@ -471,14 +479,22 @@ fn build_json_diagnostics(
 
     let canonical_name_to_output_id: FxHashMap<String, String> = node_ids
         .iter()
-        .map(|(node_id, output_id)| (nodes_arena[*node_id].get_name(interner).to_string(), output_id.clone()))
+        .map(|(node_id, output_id)| {
+            (
+                nodes_arena[*node_id].get_name(interner).to_string(),
+                output_id.clone(),
+            )
+        })
         .collect();
     let path_to_output_id: FxHashMap<String, String> = node_ids
         .iter()
         .filter_map(|(node_id, output_id)| {
-            nodes_arena[*node_id]
-                .filename
-                .map(|sym| (path_formatter.format_location(interner.resolve(sym)), output_id.clone()))
+            nodes_arena[*node_id].filename.map(|sym| {
+                (
+                    path_formatter.format_location(interner.resolve(sym)),
+                    output_id.clone(),
+                )
+            })
         })
         .collect();
     let mut unresolved_suppressions: FxHashSet<(String, String)> = FxHashSet::default();
@@ -839,11 +855,11 @@ pub fn write_json(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::intern::Interner;
+    use crate::FxHashSet;
     use crate::compact_edges::CompactEdgeSet;
+    use crate::intern::Interner;
     use crate::node::{Flavor, Node};
     use crate::visgraph::VisualOptions;
-    use crate::FxHashSet;
 
     fn make_test_graph() -> VisualGraph {
         let mut interner = Interner::new();
@@ -930,14 +946,7 @@ mod tests {
             annotated: false,
         };
 
-        let g = VisualGraph::from_call_graph(
-            &nodes_arena,
-            &defined,
-            &[],
-            &[],
-            &options,
-            &interner,
-        );
+        let g = VisualGraph::from_call_graph(&nodes_arena, &defined, &[], &[], &options, &interner);
         let dot = write_dot(&g, &[]);
         assert!(dot.contains("subgraph cluster_"));
         assert!(dot.contains("clusterrank=\"local\""));

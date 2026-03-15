@@ -320,7 +320,7 @@ impl VisualGraph {
         for &node_id in &sorted_ids {
             let node = &nodes_arena[node_id];
             let (group, fill_color, text_color) = colorizer.make_colors(node, interner);
-            let safe_id = make_safe_label(&node.get_name(interner));
+            let safe_id = make_safe_label(node.get_name(interner));
             let label = labeler(node);
 
             let vis_idx = all_nodes.len();
@@ -630,14 +630,8 @@ mod tests {
             annotated: false,
         };
 
-        let vg = VisualGraph::from_call_graph(
-            &nodes_arena,
-            &defined,
-            &[],
-            &[],
-            &options,
-            &interner,
-        );
+        let vg =
+            VisualGraph::from_call_graph(&nodes_arena, &defined, &[], &[], &options, &interner);
 
         assert!(vg.grouped);
         assert_eq!(vg.subgraphs.len(), 2);
@@ -665,14 +659,8 @@ mod tests {
             annotated: true,
         };
 
-        let vg = VisualGraph::from_call_graph(
-            &nodes_arena,
-            &defined,
-            &[],
-            &[],
-            &options,
-            &interner,
-        );
+        let vg =
+            VisualGraph::from_call_graph(&nodes_arena, &defined, &[], &[], &options, &interner);
 
         let label = &vg.subgraphs[0].nodes[0].label;
         assert!(label.contains("A"));

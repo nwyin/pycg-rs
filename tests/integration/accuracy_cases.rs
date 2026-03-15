@@ -96,7 +96,7 @@ fn build_graph(case: &AccuracyCase) -> CallGraph {
 fn matches_node(cg: &CallGraph, node_id: usize, expected: &str, matcher: MatchKind) -> bool {
     let node = &cg.nodes_arena[node_id];
     let full_name = node.get_name(&cg.interner);
-    let short_name = full_name.rsplit('.').next().unwrap_or(&full_name);
+    let short_name = full_name.rsplit('.').next().unwrap_or(full_name);
     match matcher {
         MatchKind::Short => short_name == expected,
         MatchKind::Full => full_name == expected,

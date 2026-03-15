@@ -128,10 +128,8 @@ impl AnalysisSession {
                 let content = std::fs::read_to_string(&filename)
                     .with_context(|| format!("reading {filename}"))?;
                 let module_name_str = get_module_name(&filename, root.as_deref());
-                let parsed = ruff_python_parser::parse_unchecked(
-                    &content,
-                    ParseOptions::from(Mode::Module),
-                );
+                let parsed =
+                    ruff_python_parser::parse_unchecked(&content, ParseOptions::from(Mode::Module));
                 let line_index = LineIndex::from_source_text(&content);
                 Ok((filename, module_name_str, parsed, line_index))
             })

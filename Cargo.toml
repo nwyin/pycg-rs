@@ -33,10 +33,6 @@ inherits = "release"
 debug = true        # full DWARF debug info for symbol resolution
 strip = false       # don't strip symbols
 
-[[bin]]
-name = "profile_target"
-path = "benches/profile_target.rs"
-
 [dev-dependencies]
 insta = "1"
 tempfile = "3"

@@ -70,13 +70,12 @@ impl super::AnalysisSession {
                         for &candidate in ids {
                             if let Some(ns_sym) = self.graph.nodes_arena[candidate].namespace {
                                 let ns_str = self.graph.interner.resolve(ns_sym);
-                                if !ns_str.is_empty() {
-                                    if let Some(scope) = self.scopes.get(&ns_sym)
-                                        && let Some(ref exports) = scope.all_exports
-                                        && !exports.contains(&name_sym)
-                                    {
-                                        continue;
-                                    }
+                                if !ns_str.is_empty()
+                                    && let Some(scope) = self.scopes.get(&ns_sym)
+                                    && let Some(ref exports) = scope.all_exports
+                                    && !exports.contains(&name_sym)
+                                {
+                                    continue;
                                 }
                                 new_uses.push((from, candidate));
                             }
@@ -91,7 +90,8 @@ impl super::AnalysisSession {
 
         // Mark all unknown nodes as not defined
         let unknown_ids: Vec<NodeId> = self
-            .graph.nodes_by_name
+            .graph
+            .nodes_by_name
             .values()
             .flat_map(|ids| ids.iter().copied())
             .filter(|&id| self.graph.nodes_arena[id].namespace.is_none())
@@ -105,7 +105,8 @@ impl super::AnalysisSession {
     fn resolve_imports(&mut self) {
         // Find all imported item nodes
         let import_nodes: Vec<NodeId> = self
-            .graph.nodes_by_name
+            .graph
+            .nodes_by_name
             .values()
             .flat_map(|ids| ids.iter())
             .copied()
@@ -145,7 +146,8 @@ impl super::AnalysisSession {
                     .copied();
                 if let Some(target) = best {
                     import_mapping.insert(from_id, target);
-                    if self.graph.nodes_arena[target].flavor == Flavor::ImportedItem && target != from_id
+                    if self.graph.nodes_arena[target].flavor == Flavor::ImportedItem
+                        && target != from_id
                     {
                         to_resolve.push(target);
                     }
@@ -164,10 +166,8 @@ impl super::AnalysisSession {
             // Resolve namespace
             let module_id = {
                 let ns_sym = self.graph.nodes_arena[to_id].namespace;
-                let ns_str = ns_sym
-                    .map(|s| self.graph.interner.resolve(s))
-                    .unwrap_or("");
-                if ns_str == "" && ns_sym.is_some() {
+                let ns_str = ns_sym.map(|s| self.graph.interner.resolve(s)).unwrap_or("");
+                if ns_str.is_empty() && ns_sym.is_some() {
                     to_id
                 } else {
                     let ns_owned = ns_sym
@@ -241,7 +241,9 @@ impl super::AnalysisSession {
 
         for (from, targets) in self.uses_edges.iter().enumerate() {
             for &to in targets {
-                if self.graph.nodes_arena[to].namespace.is_some() && !self.graph.defined.contains(&to) {
+                if self.graph.nodes_arena[to].namespace.is_some()
+                    && !self.graph.defined.contains(&to)
+                {
                     to_contract.push((from, to));
                 }
             }
@@ -254,10 +256,16 @@ impl super::AnalysisSession {
                 _ => None,
             };
             if let Some(kind) = external_kind {
-                let canonical = self.graph.nodes_arena[to].get_name(&self.graph.interner).to_string();
+                let canonical = self.graph.nodes_arena[to]
+                    .get_name(&self.graph.interner)
+                    .to_string();
                 self.record_external_reference(from, kind, canonical);
             }
-            let name_str = self.graph.interner.resolve(self.graph.nodes_arena[to].name).to_owned();
+            let name_str = self
+                .graph
+                .interner
+                .resolve(self.graph.nodes_arena[to].name)
+                .to_owned();
             let wild_id = self.get_node(None, &name_str, Flavor::Unknown);
             self.graph.defined.remove(&wild_id);
             self.add_uses_edge(from, wild_id);
@@ -309,8 +317,7 @@ impl super::AnalysisSession {
                         if to_ns != other_ns {
                             let parent_to = self.get_parent_node(to);
                             let parent_other = self.get_parent_node(other);
-                            if self.uses_edges[parent_other].contains(&parent_to)
-                            {
+                            if self.uses_edges[parent_other].contains(&parent_to) {
                                 removed.push((*from, to));
                                 break;
                             }
@@ -351,9 +358,7 @@ impl super::AnalysisSession {
 
 impl super::CallGraph {
     /// Derive a module-level dependency graph.
-    pub fn derive_module_graph(
-        &mut self,
-    ) -> (Vec<Node>, Vec<CompactEdgeSet>, FxHashSet<NodeId>) {
+    pub fn derive_module_graph(&mut self) -> (Vec<Node>, Vec<CompactEdgeSet>, FxHashSet<NodeId>) {
         // Build filename_sym -> module_name_sym mapping (all SymIds, no allocs).
         let filename_to_module: FxHashMap<SymId, SymId> = self
             .module_to_filename
@@ -432,10 +437,7 @@ impl super::CallGraph {
         // Ensure module_edges covers all nodes.
         module_edges.resize_with(new_nodes.len(), Default::default);
         let defined: FxHashSet<NodeId> = (0..new_nodes.len()).collect();
-        let compact_module_edges = module_edges
-            .into_iter()
-            .map(CompactEdgeSet::from)
-            .collect();
+        let compact_module_edges = module_edges.into_iter().map(CompactEdgeSet::from).collect();
         (new_nodes, compact_module_edges, defined)
     }
 }
@@ -509,7 +511,9 @@ mod tests {
         let diagnostic = &session.graph.diagnostics.external_references[0];
         assert_eq!(diagnostic.source_canonical_name, "app.caller");
         assert_eq!(
-            diagnostic.source_filename.map(|s| session.graph.interner.resolve(s)),
+            diagnostic
+                .source_filename
+                .map(|s| session.graph.interner.resolve(s)),
             Some("app.py")
         );
         assert_eq!(diagnostic.source_line, Some(12));

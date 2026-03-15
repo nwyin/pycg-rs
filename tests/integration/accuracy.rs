@@ -360,9 +360,9 @@ fn test_positional_unpack_correct_class_binding() {
     let star_at_end_ids = find_nodes_by_name(&cg, "star_at_end");
     assert!(!star_at_end_ids.is_empty(), "star_at_end must exist");
     let uses_alpha_method = alpha_method_in_alpha.iter().any(|&mid| {
-        star_at_end_ids.iter().any(|&fid| {
-            cg.uses_edges[fid].contains(&mid)
-        })
+        star_at_end_ids
+            .iter()
+            .any(|&fid| cg.uses_edges[fid].contains(&mid))
     });
     assert!(
         uses_alpha_method,
@@ -386,9 +386,9 @@ fn test_positional_unpack_correct_class_binding() {
     );
     let star_in_middle_ids = find_nodes_by_name(&cg, "star_in_middle");
     let uses_delta_method = delta_method_in_delta.iter().any(|&mid| {
-        star_in_middle_ids.iter().any(|&fid| {
-            cg.uses_edges[fid].contains(&mid)
-        })
+        star_in_middle_ids
+            .iter()
+            .any(|&fid| cg.uses_edges[fid].contains(&mid))
     });
     assert!(
         uses_delta_method,
@@ -545,9 +545,9 @@ fn test_accuracy_multi_return_both_methods_reachable() {
     let method_nodes: Vec<usize> = find_nodes_by_name(&cg, "method")
         .into_iter()
         .filter(|&id| {
-            caller_ids.iter().any(|&cid| {
-                cg.uses_edges[cid].contains(&id)
-            })
+            caller_ids
+                .iter()
+                .any(|&cid| cg.uses_edges[cid].contains(&id))
         })
         .collect();
     assert!(
@@ -573,9 +573,9 @@ fn test_accuracy_nested_multi_return_wrapper_preserves_all_candidates() {
     let method_nodes: Vec<usize> = find_nodes_by_name(&cg, "method")
         .into_iter()
         .filter(|&id| {
-            caller_ids.iter().any(|&cid| {
-                cg.uses_edges[cid].contains(&id)
-            })
+            caller_ids
+                .iter()
+                .any(|&cid| cg.uses_edges[cid].contains(&id))
         })
         .collect();
     assert!(
@@ -623,9 +623,7 @@ fn test_inv1_branch_join_preserves_both_branches() {
     // We check for at least two distinct nodes named "method".
     let method_nodes: Vec<usize> = find_nodes_by_name(&cg, "method")
         .into_iter()
-        .filter(|&id| {
-            cg.uses_edges[find_nodes_by_name(&cg, "caller")[0]].contains(&id)
-        })
+        .filter(|&id| cg.uses_edges[find_nodes_by_name(&cg, "caller")[0]].contains(&id))
         .collect();
     assert!(
         method_nodes.len() >= 2,
@@ -656,9 +654,9 @@ fn test_inv1_conditional_rebind_both_branches() {
     let method_nodes: Vec<usize> = find_nodes_by_name(&cg, "method")
         .into_iter()
         .filter(|&id| {
-            caller_ids.iter().any(|&cid| {
-                cg.uses_edges[cid].contains(&id)
-            })
+            caller_ids
+                .iter()
+                .any(|&cid| cg.uses_edges[cid].contains(&id))
         })
         .collect();
     assert!(
@@ -1037,9 +1035,9 @@ fn test_expand_unknowns_scoped_by_concrete_resolution() {
 
     let precision_caller_ids = find_nodes_by_name(&cg, "precision_caller");
     let has_worker_b_edge = worker_b_do_work.iter().any(|&mid| {
-        precision_caller_ids.iter().any(|&fid| {
-            cg.uses_edges[fid].contains(&mid)
-        })
+        precision_caller_ids
+            .iter()
+            .any(|&fid| cg.uses_edges[fid].contains(&mid))
     });
     assert!(
         !has_worker_b_edge,
@@ -1071,9 +1069,9 @@ fn test_expand_unknowns_fanout_count_bounded() {
         .filter(|&mid| {
             // Only count concrete (namespaced) nodes.
             cg.nodes_arena[mid].namespace.is_some()
-                && precision_caller_ids.iter().any(|&fid| {
-                    cg.uses_edges[fid].contains(&mid)
-                })
+                && precision_caller_ids
+                    .iter()
+                    .any(|&fid| cg.uses_edges[fid].contains(&mid))
         })
         .count();
 

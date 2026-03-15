@@ -267,9 +267,9 @@ fn main() -> Result<()> {
             },
         )?,
         Command::Callees(args) => {
-            run_target_query(&args.files, cli.root.as_deref(), |mut cg, json_inputs| {
+            run_target_query(&args.files, cli.root.as_deref(), |cg, json_inputs| {
                 let response = query::callees(
-                    &mut cg,
+                    &cg,
                     &args.symbol,
                     to_match_mode(&args.r#match),
                     &QueryRenderOptions {
@@ -284,9 +284,9 @@ fn main() -> Result<()> {
             })?
         }
         Command::Callers(args) => {
-            run_target_query(&args.files, cli.root.as_deref(), |mut cg, json_inputs| {
+            run_target_query(&args.files, cli.root.as_deref(), |cg, json_inputs| {
                 let response = query::callers(
-                    &mut cg,
+                    &cg,
                     &args.symbol,
                     to_match_mode(&args.r#match),
                     &QueryRenderOptions {
@@ -301,9 +301,9 @@ fn main() -> Result<()> {
             })?
         }
         Command::Neighbors(args) => {
-            run_target_query(&args.files, cli.root.as_deref(), |mut cg, json_inputs| {
+            run_target_query(&args.files, cli.root.as_deref(), |cg, json_inputs| {
                 let response = query::neighbors(
-                    &mut cg,
+                    &cg,
                     &args.symbol,
                     to_match_mode(&args.r#match),
                     &QueryRenderOptions {
@@ -318,9 +318,9 @@ fn main() -> Result<()> {
             })?
         }
         Command::Path(args) => {
-            run_target_query(&args.files, cli.root.as_deref(), |mut cg, json_inputs| {
+            run_target_query(&args.files, cli.root.as_deref(), |cg, json_inputs| {
                 let response = query::path(
-                    &mut cg,
+                    &cg,
                     &args.source,
                     &args.target,
                     to_match_mode(&args.r#match),

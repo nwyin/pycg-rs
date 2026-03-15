@@ -221,11 +221,7 @@ impl AnalysisSession {
         }
     }
 
-    fn collect_assign_target_names(
-        target: &Expr,
-        scope: &mut ScopeInfo,
-        interner: &mut Interner,
-    ) {
+    fn collect_assign_target_names(target: &Expr, scope: &mut ScopeInfo, interner: &mut Interner) {
         match target {
             Expr::Name(n) => {
                 let name = interner.intern(n.id.as_str());

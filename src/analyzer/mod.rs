@@ -333,7 +333,6 @@ struct NodeKey {
     name: SymId,
 }
 
-
 impl AnalysisSession {
     // =====================================================================
     // Visitor methods
@@ -442,7 +441,9 @@ impl AnalysisSession {
         );
 
         let from_node = self.get_node_of_current_namespace();
-        let ns = self.graph.nodes_arena[from_node].get_name(&self.graph.interner).to_owned();
+        let ns = self.graph.nodes_arena[from_node]
+            .get_name(&self.graph.interner)
+            .to_owned();
         let to_node = self.get_node(Some(&ns), &class_name, Flavor::Class);
         if self.add_defines_edge(from_node, Some(to_node)) {
             info!(
@@ -522,7 +523,9 @@ impl AnalysisSession {
         let (self_name, flavor, deco_ids) = self.analyze_function_def(node, line_index);
 
         let from_node = self.get_node_of_current_namespace();
-        let ns = self.graph.nodes_arena[from_node].get_name(&self.graph.interner).to_owned();
+        let ns = self.graph.nodes_arena[from_node]
+            .get_name(&self.graph.interner)
+            .to_owned();
         let to_node = self.get_node(Some(&ns), &func_name, flavor);
         if self.add_defines_edge(from_node, Some(to_node)) {
             info!(
@@ -539,7 +542,8 @@ impl AnalysisSession {
         // Decorator-chain call flow: each concrete (non-wildcard) decorator receives
         // the function as its argument, so emit decorator -> function uses edges.
         for &deco_id in &deco_ids {
-            if self.graph.nodes_arena[deco_id].namespace.is_some() && self.add_uses_edge(deco_id, to_node)
+            if self.graph.nodes_arena[deco_id].namespace.is_some()
+                && self.add_uses_edge(deco_id, to_node)
             {
                 info!(
                     "New edge added: decorator {} uses function {}",
@@ -642,9 +646,9 @@ impl AnalysisSession {
         let classmethod_sym = self.graph.interner.intern("classmethod");
         let flavor = if !in_class_ns {
             Flavor::Function
-        } else if deco_name_syms.iter().any(|&n| n == staticmethod_sym) {
+        } else if deco_name_syms.contains(&staticmethod_sym) {
             Flavor::StaticMethod
-        } else if deco_name_syms.iter().any(|&n| n == classmethod_sym) {
+        } else if deco_name_syms.contains(&classmethod_sym) {
             Flavor::ClassMethod
         } else {
             Flavor::Method
@@ -824,7 +828,10 @@ impl AnalysisSession {
             // Try scope-based resolution: look up the name in the source
             // module's accumulated scope.  This propagates re-exports and
             // alias chains without needing an extra remap pass.
-            let resolved: Vec<NodeId> = self.lookup_values_in_scope(&tgt_name, &item_name).iter().collect();
+            let resolved: Vec<NodeId> = self
+                .lookup_values_in_scope(&tgt_name, &item_name)
+                .iter()
+                .collect();
             if !resolved.is_empty() {
                 for id in resolved {
                     self.set_value(&alias_name, Some(id));
@@ -873,7 +880,7 @@ impl AnalysisSession {
             scope
                 .defs
                 .iter()
-                .filter(|&(&name_sym, ref vs)| {
+                .filter(|&(&name_sym, vs)| {
                     if vs.is_empty() {
                         return false;
                     }
@@ -1258,7 +1265,9 @@ impl AnalysisSession {
         if let Expr::Name(ref name_expr) = *node.name {
             let alias_name = name_expr.id.to_string();
             let from_node = self.get_node_of_current_namespace();
-            let ns = self.graph.nodes_arena[from_node].get_name(&self.graph.interner).to_owned();
+            let ns = self.graph.nodes_arena[from_node]
+                .get_name(&self.graph.interner)
+                .to_owned();
             let to_node = self.get_node(Some(&ns), &alias_name, Flavor::Name);
             self.add_defines_edge(from_node, Some(to_node));
             let line = line_index.line_index(node.range().start()).get();
@@ -1475,13 +1484,17 @@ impl AnalysisSession {
                     if self.graph.nodes_arena[obj_id].namespace.is_none() {
                         continue; // skip wildcards as objects
                     }
-                    let ns = self.graph.nodes_arena[obj_id].get_name(&self.graph.interner).to_owned();
+                    let ns = self.graph.nodes_arena[obj_id]
+                        .get_name(&self.graph.interner)
+                        .to_owned();
 
                     // Direct lookup in the object's scope, then MRO.
                     let attr_result = self.lookup_in_scope(&ns, &attr_name).or_else(|| {
                         if let Some(mro) = self.mro.get(&obj_id) {
                             return mro.iter().skip(1).find_map(|&base_id| {
-                                let base_ns = self.graph.nodes_arena[base_id].get_name(&self.graph.interner).to_owned();
+                                let base_ns = self.graph.nodes_arena[base_id]
+                                    .get_name(&self.graph.interner)
+                                    .to_owned();
                                 self.lookup_in_scope(&base_ns, &attr_name)
                             });
                         }
@@ -1569,7 +1582,9 @@ impl AnalysisSession {
             && self.class_base_ast_info.contains_key(&func_id)
         {
             let from_node = self.get_node_of_current_namespace();
-            let func_name = self.graph.nodes_arena[func_id].get_name(&self.graph.interner).to_owned();
+            let func_name = self.graph.nodes_arena[func_id]
+                .get_name(&self.graph.interner)
+                .to_owned();
             let init_node = self.get_node(Some(&func_name), "__init__", Flavor::Method);
             if self.add_uses_edge(from_node, init_node) {
                 info!(
@@ -1683,7 +1698,9 @@ impl AnalysisSession {
 
         // Add defines edge for the lambda
         let from_node = self.get_node_of_current_namespace();
-        let from_name = self.graph.nodes_arena[from_node].get_name(&self.graph.interner).to_owned();
+        let from_name = self.graph.nodes_arena[from_node]
+            .get_name(&self.graph.interner)
+            .to_owned();
         let to_node = self.get_node(Some(&from_name), "lambda", Flavor::Namespace);
         self.add_defines_edge(from_node, Some(to_node));
 
@@ -1738,7 +1755,9 @@ impl AnalysisSession {
     /// directly in the class scope, then through the MRO chain.
     fn emit_protocol_edges(&mut self, obj_id: NodeId, method_names: &[&str]) {
         let from_node = self.get_node_of_current_namespace();
-        let class_ns = self.graph.nodes_arena[obj_id].get_name(&self.graph.interner).to_owned();
+        let class_ns = self.graph.nodes_arena[obj_id]
+            .get_name(&self.graph.interner)
+            .to_owned();
 
         for &method_name in method_names {
             // Direct lookup in the class scope.
@@ -1753,10 +1772,12 @@ impl AnalysisSession {
                 }
             } else {
                 // Fall back to MRO chain.
-                let mro_ids: Option<Vec<usize>> = self.mro.get(&obj_id).map(|m| m.clone());
+                let mro_ids: Option<Vec<usize>> = self.mro.get(&obj_id).cloned();
                 let method_id = mro_ids.as_ref().and_then(|mro| {
                     mro.iter().skip(1).find_map(|&base_id| {
-                        let base_ns = self.graph.nodes_arena[base_id].get_name(&self.graph.interner).to_owned();
+                        let base_ns = self.graph.nodes_arena[base_id]
+                            .get_name(&self.graph.interner)
+                            .to_owned();
                         self.lookup_in_scope(&base_ns, method_name)
                     })
                 });
@@ -1867,7 +1888,9 @@ impl AnalysisSession {
 
         // Add defines edge
         let from_node = self.get_node_of_current_namespace();
-        let from_name = self.graph.nodes_arena[from_node].get_name(&self.graph.interner).to_owned();
+        let from_name = self.graph.nodes_arena[from_node]
+            .get_name(&self.graph.interner)
+            .to_owned();
         let to_node = self.get_node(Some(&from_name), label, Flavor::Namespace);
         self.add_defines_edge(from_node, Some(to_node));
 
@@ -2082,7 +2105,10 @@ __all__ = ["public_name"]
                 scope.defs.contains_key(&sym),
                 "missing scope def for {name}"
             );
-            assert!(scope.locals.contains(&sym), "missing local binding for {name}");
+            assert!(
+                scope.locals.contains(&sym),
+                "missing local binding for {name}"
+            );
         }
 
         let public_name_sym = interner.intern("public_name");
@@ -2178,7 +2204,10 @@ else:
                 scope.defs.contains_key(&sym),
                 "missing scope def for {name}"
             );
-            assert!(scope.locals.contains(&sym), "missing local binding for {name}");
+            assert!(
+                scope.locals.contains(&sym),
+                "missing local binding for {name}"
+            );
         }
     }
 
@@ -2198,7 +2227,10 @@ else:
 
         session.merge_scopes(&FxHashMap::from_iter([(ns_sym, incoming)]));
 
-        let merged = session.scopes.get(&ns_sym).expect("merged scope should exist");
+        let merged = session
+            .scopes
+            .get(&ns_sym)
+            .expect("merged scope should exist");
         assert!(merged.defs.contains_key(&kept_sym));
         assert!(merged.defs.contains_key(&added_sym));
         assert_eq!(
@@ -2379,9 +2411,15 @@ mod visitor_tests {
 
     fn has_uses_edge(cg: &CallGraph, from_suffix: &str, to_suffix: &str) -> bool {
         for (from_id, targets) in cg.uses_edges.iter().enumerate() {
-            if cg.nodes_arena[from_id].get_name(&cg.interner).ends_with(from_suffix) {
+            if cg.nodes_arena[from_id]
+                .get_name(&cg.interner)
+                .ends_with(from_suffix)
+            {
                 for target in targets {
-                    if cg.nodes_arena[*target].get_name(&cg.interner).ends_with(to_suffix) {
+                    if cg.nodes_arena[*target]
+                        .get_name(&cg.interner)
+                        .ends_with(to_suffix)
+                    {
                         return true;
                     }
                 }
@@ -2513,20 +2551,12 @@ def outer(cond, items, manager):
         let pkg_sym = session.graph.interner.intern("pkg");
 
         let mut existing = ScopeInfo::new();
-        existing
-            .defs
-            .entry(kept_sym)
-            .or_default()
-            .insert(keep_id);
+        existing.defs.entry(kept_sym).or_default().insert(keep_id);
         existing.all_exports = Some(FxHashSet::from_iter([kept_sym]));
         session.scopes.insert(pkg_sym, existing);
 
         let mut incoming = ScopeInfo::new();
-        incoming
-            .defs
-            .entry(extra_sym)
-            .or_default()
-            .insert(extra_id);
+        incoming.defs.entry(extra_sym).or_default().insert(extra_id);
 
         let mut incoming_scopes = FxHashMap::default();
         incoming_scopes.insert(pkg_sym, incoming);
@@ -2602,7 +2632,8 @@ def gen_case(items):
             ("gen_case", "genexpr"),
         ] {
             let mut session = AnalysisSession::new(&[], None);
-            session.scopes = AnalysisSession::build_scopes(&module, "fixture", &mut session.graph.interner);
+            session.scopes =
+                AnalysisSession::build_scopes(&module, "fixture", &mut session.graph.interner);
             enter_function(&mut session, "fixture", fn_name);
 
             let node_id = match return_expr(&module, fn_name) {
@@ -2952,9 +2983,7 @@ def outer(posonly, /, arg, *va, kw, **kwarg):
         let mut outer = ScopeInfo::new();
         outer.defs.insert(shared_sym, ValueSet::empty());
         let mut inner = ScopeInfo::new();
-        inner
-            .defs
-            .insert(inner_only_sym, ValueSet::empty());
+        inner.defs.insert(inner_only_sym, ValueSet::empty());
 
         session.scopes.insert(pkg_mod_sym, outer);
         session.scopes.insert(pkg_mod_inner_sym, inner);

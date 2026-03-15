@@ -1,8 +1,8 @@
 use crate::analyzer::{CallGraph, ExternalReferenceKind};
 use crate::intern::Interner;
 use crate::node::{Flavor, Node, NodeId};
-use serde::Serialize;
 use crate::{FxHashMap, FxHashSet};
+use serde::Serialize;
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
@@ -561,11 +561,18 @@ fn public_kind(node: &Node) -> Option<&'static str> {
     }
 }
 
-fn node_name_and_namespace(node: &Node, canonical_name: &str, interner: &Interner) -> (Option<String>, Option<String>) {
+fn node_name_and_namespace(
+    node: &Node,
+    canonical_name: &str,
+    interner: &Interner,
+) -> (Option<String>, Option<String>) {
     if let Some(ns_id) = node.namespace {
         let ns_str = interner.resolve(ns_id);
         if !ns_str.is_empty() {
-            return (Some(interner.resolve(node.name).to_owned()), Some(ns_str.to_owned()));
+            return (
+                Some(interner.resolve(node.name).to_owned()),
+                Some(ns_str.to_owned()),
+            );
         }
     }
 
@@ -602,7 +609,7 @@ fn defined_public_node_ids(cg: &CallGraph) -> Vec<NodeId> {
     ids.sort_by(|a, b| {
         cg.nodes_arena[*a]
             .get_name(&cg.interner)
-            .cmp(&cg.nodes_arena[*b].get_name(&cg.interner))
+            .cmp(cg.nodes_arena[*b].get_name(&cg.interner))
     });
     ids
 }
@@ -623,7 +630,7 @@ fn resolve_symbol_matches(cg: &CallGraph, symbol: &str, match_mode: MatchMode) -
     ids.sort_by(|a, b| {
         cg.nodes_arena[*a]
             .get_name(&cg.interner)
-            .cmp(&cg.nodes_arena[*b].get_name(&cg.interner))
+            .cmp(cg.nodes_arena[*b].get_name(&cg.interner))
     });
     ids
 }
@@ -776,7 +783,8 @@ fn collect_query_diagnostics(
                 let target_name_str = cg.interner.resolve(target.name).to_owned();
                 if target_name_str == "__init__"
                     || target_name_str.starts_with("^^^")
-                    || unresolved_suppressions.contains(&(source_name.clone(), target_name_str.clone()))
+                    || unresolved_suppressions
+                        .contains(&(source_name.clone(), target_name_str.clone()))
                 {
                     continue;
                 }
@@ -899,11 +907,11 @@ pub fn symbols_in(
             let node_ids: Vec<NodeId> = defined_public_node_ids(cg)
                 .into_iter()
                 .filter(|id| match target_kind {
-                    TargetKind::Path => cg.nodes_arena[*id]
-                        .filename
-                        .is_some_and(|sym| path_matches_target(cg.interner.resolve(sym), target, &formatter)),
+                    TargetKind::Path => cg.nodes_arena[*id].filename.is_some_and(|sym| {
+                        path_matches_target(cg.interner.resolve(sym), target, &formatter)
+                    }),
                     TargetKind::Module => {
-                        module_matches_target(&cg.nodes_arena[*id].get_name(&cg.interner), target)
+                        module_matches_target(cg.nodes_arena[*id].get_name(&cg.interner), target)
                     }
                 })
                 .collect();
@@ -951,10 +959,12 @@ pub fn symbols_in(
             for id in defined {
                 let node = &nodes[id];
                 let matches = match target_kind {
-                    TargetKind::Path => node
-                        .filename
-                        .is_some_and(|sym| path_matches_target(cg.interner.resolve(sym), target, &formatter)),
-                    TargetKind::Module => module_matches_target(&node.get_name(&cg.interner), target),
+                    TargetKind::Path => node.filename.is_some_and(|sym| {
+                        path_matches_target(cg.interner.resolve(sym), target, &formatter)
+                    }),
+                    TargetKind::Module => {
+                        module_matches_target(node.get_name(&cg.interner), target)
+                    }
                 };
                 if matches {
                     relevant_ids.insert(id);
@@ -1142,10 +1152,12 @@ pub fn callees(
                     if !cg.defined.contains(target_id) {
                         return None;
                     }
-                    symbol_ref(&cg.nodes_arena[*target_id], &formatter, &cg.interner).map(|target| OutgoingEdge {
-                        kind: "uses".to_string(),
-                        target,
-                    })
+                    symbol_ref(&cg.nodes_arena[*target_id], &formatter, &cg.interner).map(
+                        |target| OutgoingEdge {
+                            kind: "uses".to_string(),
+                            target,
+                        },
+                    )
                 })
                 .collect();
             edges.sort_by(|a, b| a.target.canonical_name.cmp(&b.target.canonical_name));
@@ -1191,9 +1203,11 @@ pub fn callers(
                         return None;
                     }
                     relevant_ids.insert(source_id);
-                    symbol_ref(&cg.nodes_arena[source_id], &formatter, &cg.interner).map(|source| IncomingEdge {
-                        kind: "uses".to_string(),
-                        source,
+                    symbol_ref(&cg.nodes_arena[source_id], &formatter, &cg.interner).map(|source| {
+                        IncomingEdge {
+                            kind: "uses".to_string(),
+                            source,
+                        }
                     })
                 })
                 .collect();
@@ -1240,7 +1254,9 @@ pub fn neighbors(
                     continue;
                 }
                 relevant_ids.insert(source_id);
-                if let Some(source) = symbol_ref(&cg.nodes_arena[source_id], &formatter, &cg.interner) {
+                if let Some(source) =
+                    symbol_ref(&cg.nodes_arena[source_id], &formatter, &cg.interner)
+                {
                     incoming.push(IncomingEdge {
                         kind: "uses".to_string(),
                         source,
@@ -1252,7 +1268,9 @@ pub fn neighbors(
                 if !cg.defined.contains(target_id) {
                     continue;
                 }
-                if let Some(target) = symbol_ref(&cg.nodes_arena[*target_id], &formatter, &cg.interner) {
+                if let Some(target) =
+                    symbol_ref(&cg.nodes_arena[*target_id], &formatter, &cg.interner)
+                {
                     outgoing.push(OutgoingEdge {
                         kind: "uses".to_string(),
                         target,
@@ -1336,7 +1354,7 @@ pub fn path(
             sorted_targets.sort_by(|a, b| {
                 cg.nodes_arena[*a]
                     .get_name(&cg.interner)
-                    .cmp(&cg.nodes_arena[*b].get_name(&cg.interner))
+                    .cmp(cg.nodes_arena[*b].get_name(&cg.interner))
             });
             for next in sorted_targets {
                 if visited.insert(next) {
