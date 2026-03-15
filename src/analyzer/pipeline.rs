@@ -44,6 +44,7 @@ impl AnalysisSession {
             module_name: empty_sym,
             filename: String::new(),
             name_stack: Vec::new(),
+            fqn_cache: Vec::new(),
             scope_stack: Vec::new(),
             class_stack: Vec::new(),
             context_stack: Vec::new(),

@@ -293,6 +293,10 @@ pub(super) struct AnalysisSession {
     pub(super) module_name: SymId,
     pub(super) filename: String,
     pub(super) name_stack: Vec<SymId>,
+    /// Cached FQN for each name_stack depth. `fqn_cache[i]` is the interned
+    /// join of `name_stack[0..=i]` with `"."`. Avoids re-joining and
+    /// re-interning on every `get_node_of_current_namespace` call.
+    pub(super) fqn_cache: Vec<SymId>,
     pub(super) scope_stack: Vec<SymId>, // keys into self.scopes
     pub(super) class_stack: Vec<NodeId>,
     pub(super) context_stack: Vec<String>,
@@ -348,7 +352,7 @@ impl AnalysisSession {
         self.associate_node(module_node, &fname, line);
 
         let ns_sym = self.module_name;
-        self.name_stack.push(ns_sym);
+        self.push_name(ns_sym);
         self.scope_stack.push(ns_sym);
         self.context_stack.push(format!("Module {mod_name_str}"));
 
@@ -358,7 +362,7 @@ impl AnalysisSession {
 
         self.context_stack.pop();
         self.scope_stack.pop();
-        self.name_stack.pop();
+        self.pop_name();
 
         self.add_defines_edge(module_node, None);
     }
@@ -457,12 +461,9 @@ impl AnalysisSession {
 
         self.class_stack.push(to_node);
         let class_sym = self.graph.interner.intern(&class_name);
-        self.name_stack.push(class_sym);
-        let inner_ns = {
-            let inner_node = self.get_node_of_current_namespace();
-            self.nodes_arena[inner_node].get_name(&self.graph.interner)
-        };
-        let inner_ns_sym = self.graph.interner.intern(&inner_ns);
+        self.push_name(class_sym);
+        let _inner_node = self.get_node_of_current_namespace(); // ensure node exists
+        let inner_ns_sym = *self.fqn_cache.last().unwrap();
         self.scope_stack.push(inner_ns_sym);
         self.context_stack.push(format!("ClassDef {class_name}"));
 
@@ -496,7 +497,7 @@ impl AnalysisSession {
 
         self.context_stack.pop();
         self.scope_stack.pop();
-        self.name_stack.pop();
+        self.pop_name();
         self.class_stack.pop();
     }
 
@@ -554,16 +555,14 @@ impl AnalysisSession {
 
         // Enter function scope
         let func_sym = self.graph.interner.intern(&func_name);
-        self.name_stack.push(func_sym);
-        let inner_ns = {
-            let inner_node = self.get_node_of_current_namespace();
-            self.nodes_arena[inner_node].get_name(&self.graph.interner)
-        };
-        let inner_ns_sym = self.graph.interner.intern(&inner_ns);
+        self.push_name(func_sym);
+        let _inner_node = self.get_node_of_current_namespace(); // ensure node exists
+        let inner_ns_sym = *self.fqn_cache.last().unwrap();
         self.scope_stack.push(inner_ns_sym);
         self.context_stack.push(format!("FunctionDef {func_name}"));
 
         // Capture arg names as nonsense nodes
+        let inner_ns = self.graph.interner.resolve(inner_ns_sym).to_owned();
         self.generate_args_nodes(&node.parameters, &inner_ns);
 
         // Bind self_name to current class (additive insert into ValueSet)
@@ -618,7 +617,7 @@ impl AnalysisSession {
         // Exit function scope
         self.context_stack.pop();
         self.scope_stack.pop();
-        self.name_stack.pop();
+        self.pop_name();
     }
 
     fn analyze_function_def(
@@ -1636,10 +1635,8 @@ impl AnalysisSession {
 
     fn visit_lambda(&mut self, node: &ExprLambda, line_index: &LineIndex) -> Option<NodeId> {
         let label = "lambda";
-        let parent_ns = {
-            let parent_node = self.get_node_of_current_namespace();
-            self.nodes_arena[parent_node].get_name(&self.graph.interner)
-        };
+        let parent_fqn = *self.fqn_cache.last().unwrap();
+        let parent_ns = self.graph.interner.resolve(parent_fqn).to_owned();
         let inner_ns = format!("{parent_ns}.{label}");
         let inner_ns_sym = self.graph.interner.intern(&inner_ns);
 
@@ -1677,7 +1674,7 @@ impl AnalysisSession {
         }
 
         let label_sym = self.graph.interner.intern(label);
-        self.name_stack.push(label_sym);
+        self.push_name(label_sym);
         self.scope_stack.push(inner_ns_sym);
         self.context_stack.push(label.to_string());
 
@@ -1689,7 +1686,7 @@ impl AnalysisSession {
 
         self.context_stack.pop();
         self.scope_stack.pop();
-        self.name_stack.pop();
+        self.pop_name();
 
         // Add defines edge for the lambda
         let from_node = self.get_node_of_current_namespace();
@@ -1813,10 +1810,8 @@ impl AnalysisSession {
         }
 
         // Ensure comprehension scope exists
-        let parent_ns = {
-            let parent_node = self.get_node_of_current_namespace();
-            self.nodes_arena[parent_node].get_name(&self.graph.interner)
-        };
+        let parent_fqn = *self.fqn_cache.last().unwrap();
+        let parent_ns = self.graph.interner.resolve(parent_fqn).to_owned();
         let inner_ns = format!("{parent_ns}.{label}");
         let inner_ns_sym = self.graph.interner.intern(&inner_ns);
         if !self.scopes.contains_key(&inner_ns_sym) {
@@ -1835,7 +1830,7 @@ impl AnalysisSession {
 
         // Enter inner scope
         let label_sym = self.graph.interner.intern(label);
-        self.name_stack.push(label_sym);
+        self.push_name(label_sym);
         self.scope_stack.push(inner_ns_sym);
         self.context_stack.push(label.to_string());
 
@@ -1876,7 +1871,7 @@ impl AnalysisSession {
         // Exit inner scope
         self.context_stack.pop();
         self.scope_stack.pop();
-        self.name_stack.pop();
+        self.pop_name();
 
         // Add defines edge
         let from_node = self.get_node_of_current_namespace();
@@ -2384,6 +2379,7 @@ mod visitor_tests {
         let fn_ns_str = format!("{module_ns}.{fn_name}");
         let fn_ns_sym = session.graph.interner.intern(&fn_ns_str);
         session.name_stack = vec![ns_sym, fn_sym];
+        session.fqn_cache = vec![ns_sym, fn_ns_sym];
         session.scope_stack = vec![ns_sym, fn_ns_sym];
         session.context_stack = vec![
             format!("Module {module_ns}"),

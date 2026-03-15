@@ -69,25 +69,79 @@ impl AnalysisSession {
         id
     }
 
+    /// Push a name onto the name_stack and update the FQN cache.
+    pub(super) fn push_name(&mut self, name: SymId) {
+        self.name_stack.push(name);
+        let fqn = if self.name_stack.len() == 1 {
+            name
+        } else {
+            let prev_fqn = *self.fqn_cache.last().unwrap();
+            let prev_str = self.graph.interner.resolve(prev_fqn);
+            let name_str = self.graph.interner.resolve(name);
+            let joined = format!("{prev_str}.{name_str}");
+            self.graph.interner.intern(&joined)
+        };
+        self.fqn_cache.push(fqn);
+    }
+
+    /// Pop a name from the name_stack and FQN cache.
+    pub(super) fn pop_name(&mut self) {
+        self.name_stack.pop();
+        self.fqn_cache.pop();
+    }
+
+    /// Get or create a node by pre-interned SymIds. Avoids re-interning.
+    pub(super) fn get_node_by_sym(
+        &mut self,
+        namespace: Option<SymId>,
+        name: SymId,
+        flavor: Flavor,
+    ) -> NodeId {
+        let key = NodeKey {
+            namespace,
+            name,
+        };
+        if let Some(&id) = self.node_ids_by_key.get(&key) {
+            let n = &self.nodes_arena[id];
+            if flavor.specificity() > n.flavor.specificity() {
+                self.nodes_arena[id].flavor = flavor;
+            }
+            return id;
+        }
+
+        let filename = if let Some(ns_sym) = namespace {
+            if let Some(f) = self.module_to_filename.get(&ns_sym) {
+                Some(f.clone())
+            } else {
+                Some(self.filename.clone())
+            }
+        } else {
+            Some(self.filename.clone())
+        };
+
+        let mut node = Node::new(namespace, name, flavor);
+        node.filename = filename;
+        let id = self.nodes_arena.len();
+        if namespace.is_none() {
+            self.defined.insert(id);
+        }
+
+        self.nodes_arena.push(node);
+        self.node_ids_by_key.insert(key, id);
+        self.nodes_by_name.entry(name).or_default().push(id);
+        id
+    }
+
     pub(super) fn get_node_of_current_namespace(&mut self) -> NodeId {
         assert!(!self.name_stack.is_empty());
-        let namespace = if self.name_stack.len() > 1 {
-            let parts: Vec<&str> = self.name_stack[..self.name_stack.len() - 1]
-                .iter()
-                .map(|&id| self.graph.interner.resolve(id))
-                .collect();
-            parts.join(".")
+        let len = self.fqn_cache.len();
+        let ns_sym = if len > 1 {
+            Some(self.fqn_cache[len - 2])
         } else {
-            String::new()
+            Some(self.graph.interner.intern(""))
         };
-        let name = {
-            let name_sym = *self
-                .name_stack
-                .last()
-                .expect("name_stack must not be empty during AST walk");
-            self.graph.interner.resolve(name_sym).to_owned()
-        };
-        self.get_node(Some(&namespace), &name, Flavor::Namespace)
+        let name_sym = *self.name_stack.last().unwrap();
+        self.get_node_by_sym(ns_sym, name_sym, Flavor::Namespace)
     }
 
     pub(super) fn get_parent_node(&mut self, node_id: NodeId) -> NodeId {
