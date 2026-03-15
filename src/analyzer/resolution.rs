@@ -45,6 +45,7 @@ impl AnalysisSession {
             Expr::Attribute(a) => {
                 let attr_name = a.attr.id.to_string();
                 let obj_ids = self.get_obj_ids_for_expr(&a.value);
+                let mut seen = FxHashSet::default();
                 let mut results = Vec::new();
                 for obj_id in obj_ids {
                     if self.nodes_arena[obj_id].namespace.is_none() {
@@ -60,7 +61,7 @@ impl AnalysisSession {
                                 let base_values =
                                     self.lookup_values_in_scope(&base_ns, &attr_name);
                                 for id in base_values.iter() {
-                                    if !results.contains(&id) {
+                                    if seen.insert(id) {
                                         results.push(id);
                                     }
                                 }
@@ -71,7 +72,7 @@ impl AnalysisSession {
                         }
                     } else {
                         for id in values.iter() {
-                            if !results.contains(&id) {
+                            if seen.insert(id) {
                                 results.push(id);
                             }
                         }
@@ -85,16 +86,17 @@ impl AnalysisSession {
                 }
 
                 let func_ids = self.get_obj_ids_for_expr(&call.func);
+                let mut seen = FxHashSet::default();
                 let mut results = Vec::new();
                 for &func_id in &func_ids {
                     if self.class_base_ast_info.contains_key(&func_id)
-                        && !results.contains(&func_id)
+                        && seen.insert(func_id)
                     {
                         results.push(func_id);
                     }
                     if let Some(ret_ids) = self.function_returns.get(&func_id) {
                         for &ret_id in ret_ids {
-                            if !results.contains(&ret_id) {
+                            if seen.insert(ret_id) {
                                 results.push(ret_id);
                             }
                         }
