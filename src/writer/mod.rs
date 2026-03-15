@@ -453,7 +453,7 @@ fn diagnostic_location(
 fn build_json_diagnostics(
     nodes_arena: &[Node],
     defined: &FxHashSet<NodeId>,
-    uses_edges: &FxHashMap<NodeId, FxHashSet<NodeId>>,
+    uses_edges: &[FxHashSet<NodeId>],
     node_ids: &FxHashMap<NodeId, String>,
     analyzer_diagnostics: &AnalysisDiagnostics,
     graph_mode: &JsonGraphMode,
@@ -516,7 +516,9 @@ fn build_json_diagnostics(
         });
     }
 
-    let mut source_ids: Vec<NodeId> = uses_edges.keys().copied().collect();
+    let mut source_ids: Vec<NodeId> = (0..uses_edges.len())
+        .filter(|&i| !uses_edges[i].is_empty())
+        .collect();
     source_ids.sort_unstable();
 
     for source in source_ids {
@@ -529,10 +531,7 @@ fn build_json_diagnostics(
         let source_node = &nodes_arena[source];
         let (path, line) = diagnostic_location(source_node, path_formatter, interner);
 
-        let mut targets: Vec<NodeId> = uses_edges
-            .get(&source)
-            .map(|targets| targets.iter().copied().collect())
-            .unwrap_or_default();
+        let mut targets: Vec<NodeId> = uses_edges[source].iter().copied().collect();
         targets.sort_unstable_by(|a, b| {
             let left = &nodes_arena[*a];
             let right = &nodes_arena[*b];
@@ -682,8 +681,8 @@ fn build_json_diagnostics(
 pub fn write_json(
     nodes_arena: &[Node],
     defined: &FxHashSet<NodeId>,
-    defines_edges: &FxHashMap<NodeId, FxHashSet<NodeId>>,
-    uses_edges: &FxHashMap<NodeId, FxHashSet<NodeId>>,
+    defines_edges: &[FxHashSet<NodeId>],
+    uses_edges: &[FxHashSet<NodeId>],
     analyzer_diagnostics: &AnalysisDiagnostics,
     options: &JsonOutputOptions<'_>,
     interner: &Interner,
@@ -738,8 +737,8 @@ pub fn write_json(
     let mut edges = Vec::new();
     let mut edge_kind_counts: BTreeMap<String, usize> = BTreeMap::new();
 
-    for (&src, targets) in defines_edges {
-        if !defined_set.contains(&src) {
+    for (src, targets) in defines_edges.iter().enumerate() {
+        if targets.is_empty() || !defined_set.contains(&src) {
             continue;
         }
         for &tgt in targets {
@@ -761,8 +760,8 @@ pub fn write_json(
         }
     }
 
-    for (&src, targets) in uses_edges {
-        if !defined_set.contains(&src) {
+    for (src, targets) in uses_edges.iter().enumerate() {
+        if targets.is_empty() || !defined_set.contains(&src) {
             continue;
         }
         for &tgt in targets {
@@ -867,12 +866,12 @@ mod tests {
         defined.insert(1);
         defined.insert(2);
 
-        let mut uses = FxHashMap::default();
-        uses.entry(0).or_insert_with(FxHashSet::default).insert(1);
-        uses.entry(1).or_insert_with(FxHashSet::default).insert(2);
+        let mut uses = vec![FxHashSet::default(); 3];
+        uses[0].insert(1);
+        uses[1].insert(2);
 
-        let mut defines = FxHashMap::default();
-        defines.entry(0).or_insert_with(FxHashSet::default).insert(1);
+        let mut defines = vec![FxHashSet::default(); 3];
+        defines[0].insert(1);
 
         let options = VisualOptions {
             draw_defines: true,
@@ -926,8 +925,8 @@ mod tests {
         let g = VisualGraph::from_call_graph(
             &nodes_arena,
             &defined,
-            &FxHashMap::default(),
-            &FxHashMap::default(),
+            &[],
+            &[],
             &options,
             &interner,
         );

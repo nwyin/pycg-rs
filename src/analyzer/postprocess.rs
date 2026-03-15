@@ -24,7 +24,7 @@ impl super::AnalysisSession {
         // Build index of (from_id, short_name SymId) pairs that already have a
         // concrete (namespaced) uses edge.
         let mut concrete_uses_pairs: FxHashSet<(NodeId, super::SymId)> = FxHashSet::default();
-        for (&from, targets) in &self.uses_edges {
+        for (from, targets) in self.uses_edges.iter().enumerate() {
             for &to in targets {
                 if self.nodes_arena[to].namespace.is_some() {
                     concrete_uses_pairs.insert((from, self.nodes_arena[to].name));
@@ -34,7 +34,7 @@ impl super::AnalysisSession {
 
         // Collect new defines edges
         let mut new_defines: Vec<(NodeId, NodeId)> = Vec::new();
-        for (&from, targets) in &self.defines_edges {
+        for (from, targets) in self.defines_edges.iter().enumerate() {
             for &to in targets {
                 if self.nodes_arena[to].namespace.is_none() {
                     let name_sym = self.nodes_arena[to].name;
@@ -54,7 +54,7 @@ impl super::AnalysisSession {
 
         // Collect new uses edges
         let mut new_uses: Vec<(NodeId, NodeId)> = Vec::new();
-        for (&from, targets) in &self.uses_edges {
+        for (from, targets) in self.uses_edges.iter().enumerate() {
             for &to in targets {
                 if self.nodes_arena[to].namespace.is_none() {
                     let name_sym = self.nodes_arena[to].name;
@@ -153,12 +153,9 @@ impl super::AnalysisSession {
             }
 
             // Strategy 2: uses-edge walk
-            let to_id = if let Some(targets) = self.uses_edges.get(&from_id) {
-                if targets.len() == 1 {
-                    *targets.iter().next().expect("len == 1 checked above")
-                } else {
-                    continue;
-                }
+            let targets = &self.uses_edges[from_id];
+            let to_id = if targets.len() == 1 {
+                *targets.iter().next().expect("len == 1 checked above")
             } else {
                 continue;
             };
@@ -179,7 +176,8 @@ impl super::AnalysisSession {
                 }
             };
 
-            if let Some(module_uses) = self.uses_edges.get(&module_id).cloned() {
+            let module_uses = self.uses_edges[module_id].clone();
+            if !module_uses.is_empty() {
                 let from_name = self.nodes_arena[from_id].name;
                 for candidate in &module_uses {
                     if self.nodes_arena[*candidate].name == from_name {
@@ -199,26 +197,28 @@ impl super::AnalysisSession {
         if !import_mapping.is_empty() {
             let remap = |id: NodeId| -> NodeId { *import_mapping.get(&id).unwrap_or(&id) };
 
-            let old_uses: Vec<(NodeId, FxHashSet<NodeId>)> = self.uses_edges.drain().collect();
-            for (from, targets) in old_uses {
+            let num_nodes = self.nodes_arena.len();
+            let old_uses = std::mem::take(&mut self.uses_edges);
+            self.uses_edges.resize_with(num_nodes, Default::default);
+            for (from, targets) in old_uses.into_iter().enumerate() {
                 if targets.is_empty() {
                     continue;
                 }
                 let new_from = remap(from);
-                let entry = self.uses_edges.entry(new_from).or_default();
+                let entry = &mut self.uses_edges[new_from];
                 for to in targets {
                     entry.insert(remap(to));
                 }
             }
 
-            let old_defines: Vec<(NodeId, FxHashSet<NodeId>)> =
-                self.defines_edges.drain().collect();
-            for (from, targets) in old_defines {
+            let old_defines = std::mem::take(&mut self.defines_edges);
+            self.defines_edges.resize_with(num_nodes, Default::default);
+            for (from, targets) in old_defines.into_iter().enumerate() {
                 if targets.is_empty() {
                     continue;
                 }
                 let new_from = remap(from);
-                let entry = self.defines_edges.entry(new_from).or_default();
+                let entry = &mut self.defines_edges[new_from];
                 for to in targets {
                     entry.insert(remap(to));
                 }
@@ -238,7 +238,7 @@ impl super::AnalysisSession {
     fn contract_nonexistents(&mut self) {
         let mut to_contract: Vec<(NodeId, NodeId)> = Vec::new();
 
-        for (&from, targets) in &self.uses_edges {
+        for (from, targets) in self.uses_edges.iter().enumerate() {
             for &to in targets {
                 if self.nodes_arena[to].namespace.is_some() && !self.defined.contains(&to) {
                     to_contract.push((from, to));
@@ -275,7 +275,9 @@ impl super::AnalysisSession {
         let uses_snapshot: Vec<(NodeId, Vec<NodeId>)> = self
             .uses_edges
             .iter()
-            .map(|(&k, v)| (k, v.iter().copied().collect::<Vec<_>>()))
+            .enumerate()
+            .filter(|(_, v)| !v.is_empty())
+            .map(|(k, v)| (k, v.iter().copied().collect::<Vec<_>>()))
             .collect();
 
         // Reusable bucket map to avoid per-source allocation.
@@ -306,8 +308,7 @@ impl super::AnalysisSession {
                         if to_ns != other_ns {
                             let parent_to = self.get_parent_node(to);
                             let parent_other = self.get_parent_node(other);
-                            if let Some(parent_other_uses) = self.uses_edges.get(&parent_other)
-                                && parent_other_uses.contains(&parent_to)
+                            if self.uses_edges[parent_other].contains(&parent_to)
                             {
                                 removed.push((*from, to));
                                 break;
@@ -333,7 +334,8 @@ impl super::AnalysisSession {
                 for id in ids {
                     let parent_id = self.get_parent_node(id);
 
-                    if let Some(inner_uses) = self.uses_edges.get(&id).cloned() {
+                    let inner_uses = self.uses_edges[id].clone();
+                    if !inner_uses.is_empty() {
                         for target in inner_uses {
                             self.add_uses_edge(parent_id, target);
                         }
@@ -350,7 +352,7 @@ impl super::CallGraph {
     /// Derive a module-level dependency graph.
     pub fn derive_module_graph(
         &mut self,
-    ) -> (Vec<Node>, FxHashMap<NodeId, FxHashSet<NodeId>>, FxHashSet<NodeId>) {
+    ) -> (Vec<Node>, Vec<FxHashSet<NodeId>>, FxHashSet<NodeId>) {
         // Build filename_sym -> module_name_sym mapping (all SymIds, no allocs).
         let filename_to_module: FxHashMap<SymId, SymId> = self
             .module_to_filename
@@ -386,9 +388,13 @@ impl super::CallGraph {
             new_nodes[id].filename = Some(*file_sym);
         }
 
-        let mut module_edges: FxHashMap<NodeId, FxHashSet<NodeId>> = FxHashMap::default();
+        // Pre-allocate with initial capacity; may grow if ensure_module adds nodes.
+        let mut module_edges: Vec<FxHashSet<NodeId>> = Vec::new();
 
-        for (&src, targets) in &self.uses_edges {
+        for (src, targets) in self.uses_edges.iter().enumerate() {
+            if targets.is_empty() {
+                continue;
+            }
             let src_node = &self.nodes_arena[src];
             let src_mod: Option<String> = src_node
                 .filename
@@ -415,10 +421,15 @@ impl super::CallGraph {
 
                 let src_mid = ensure_module(&src_mod, &mut new_nodes, &mut self.interner);
                 let tgt_mid = ensure_module(&tgt_mod, &mut new_nodes, &mut self.interner);
-                module_edges.entry(src_mid).or_default().insert(tgt_mid);
+                if src_mid >= module_edges.len() {
+                    module_edges.resize_with(src_mid + 1, Default::default);
+                }
+                module_edges[src_mid].insert(tgt_mid);
             }
         }
 
+        // Ensure module_edges covers all nodes.
+        module_edges.resize_with(new_nodes.len(), Default::default);
         let defined: FxHashSet<NodeId> = (0..new_nodes.len()).collect();
         (new_nodes, module_edges, defined)
     }
@@ -441,7 +452,7 @@ mod tests {
         session.add_uses_edge(caller, unknown);
         session.expand_unknowns();
 
-        let targets = session.uses_edges.get(&caller).expect("caller uses edges");
+        let targets = &session.uses_edges[caller];
         assert!(targets.contains(&worker_a));
         assert!(targets.contains(&worker_b));
         assert!(
@@ -470,7 +481,7 @@ mod tests {
 
         session.resolve_imports();
 
-        let targets = session.uses_edges.get(&caller).expect("caller uses edges");
+        let targets = &session.uses_edges[caller];
         assert!(targets.contains(&concrete));
         assert!(
             !targets.contains(&imported),
@@ -516,7 +527,7 @@ mod tests {
 
         session.cull_inherited();
 
-        let targets = session.uses_edges.get(&caller).expect("caller uses edges");
+        let targets = &session.uses_edges[caller];
         assert!(
             !targets.contains(&parent_method),
             "redundant inherited edge should be removed",

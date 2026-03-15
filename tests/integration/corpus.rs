@@ -77,7 +77,7 @@ fn analyze_corpus(dir: &std::path::Path) -> (CallGraph, CorpusStats) {
             )
         })
         .count();
-    let uses_edge_count: usize = cg.uses_edges.values().map(|s| s.len()).sum();
+    let uses_edge_count: usize = cg.uses_edges.iter().map(|s| s.len()).sum();
 
     eprintln!(
         "[corpus {dir:?}] {} files → {} modules, {} classes, {} functions, {} uses edges",

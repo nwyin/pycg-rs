@@ -244,8 +244,8 @@ pub struct CallGraph {
     pub nodes_by_name: FxHashMap<SymId, Vec<NodeId>>,
 
     // Edges -------------------------------------------------------------
-    pub defines_edges: FxHashMap<NodeId, FxHashSet<NodeId>>,
-    pub uses_edges: FxHashMap<NodeId, FxHashSet<NodeId>>,
+    pub defines_edges: Vec<FxHashSet<NodeId>>,
+    pub uses_edges: Vec<FxHashSet<NodeId>>,
 
     /// Which nodes have been marked *defined* (have a defines edge from
     /// them, or were created as wildcard nodes).
@@ -2021,10 +2021,8 @@ mod prepass_tests {
 
     fn exact_uses(cg: &CallGraph, exact_name: &str) -> FxHashSet<String> {
         let from_id = find_exact_node(cg, exact_name);
-        cg.uses_edges
-            .get(&from_id)
-            .into_iter()
-            .flat_map(|targets| targets.iter())
+        cg.uses_edges[from_id]
+            .iter()
             .map(|&id| cg.nodes_arena[id].get_name(&cg.interner).to_string())
             .collect()
     }
@@ -2392,8 +2390,8 @@ mod visitor_tests {
     }
 
     fn has_uses_edge(cg: &CallGraph, from_suffix: &str, to_suffix: &str) -> bool {
-        for (from_id, targets) in &cg.uses_edges {
-            if cg.nodes_arena[*from_id].get_name(&cg.interner).ends_with(from_suffix) {
+        for (from_id, targets) in cg.uses_edges.iter().enumerate() {
+            if cg.nodes_arena[from_id].get_name(&cg.interner).ends_with(from_suffix) {
                 for target in targets {
                     if cg.nodes_arena[*target].get_name(&cg.interner).ends_with(to_suffix) {
                         return true;
@@ -2633,10 +2631,7 @@ def gen_case(items):
             };
 
             let parent_id = session.get_node(Some("fixture"), fn_name, Flavor::Namespace);
-            let targets = session
-                .defines_edges
-                .get(&parent_id)
-                .expect("comprehension defines edge");
+            let targets = &session.defines_edges[parent_id];
             assert!(
                 targets.contains(&node_id),
                 "{fn_name} should define its comprehension node"
@@ -3032,10 +3027,7 @@ def outer(posonly, /, arg, *va, kw, **kwarg):
         assert!(session.add_uses_edge(caller, wildcard_bar));
         assert!(session.add_uses_edge(caller, concrete_foo));
 
-        let edges = session
-            .uses_edges
-            .get(&caller)
-            .expect("caller should have uses edges");
+        let edges = &session.uses_edges[caller];
         assert!(
             !edges.contains(&wildcard_foo),
             "concrete resolution should remove the matching wildcard edge"

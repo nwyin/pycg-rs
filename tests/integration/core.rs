@@ -163,7 +163,7 @@ fn test_module_graph() {
     assert_eq!(mod_defined.len(), mod_nodes.len());
 
     // Should have cross-module edges (submodule1 imports from subpackage1, etc.)
-    let total_edges: usize = mod_uses.values().map(|s| s.len()).sum();
+    let total_edges: usize = mod_uses.iter().map(|s| s.len()).sum();
     assert!(
         total_edges >= 3,
         "module graph should have cross-module edges, got {total_edges}"
@@ -180,7 +180,7 @@ fn test_module_graph() {
     let vg = VisualGraph::from_call_graph(
         &mod_nodes,
         &mod_defined,
-        &pycg_rs::FxHashMap::default(),
+        &[],
         &mod_uses,
         &opts,
         &cg.interner,

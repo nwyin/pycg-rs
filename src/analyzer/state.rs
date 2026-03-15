@@ -75,6 +75,8 @@ impl AnalysisSession {
         }
 
         self.nodes_arena.push(node);
+        self.uses_edges.push(FxHashSet::default());
+        self.defines_edges.push(FxHashSet::default());
         self.node_ids_by_key.insert(key, id);
         self.nodes_by_name.entry(name_sym).or_default().push(id);
         id
@@ -151,6 +153,8 @@ impl AnalysisSession {
         }
 
         self.nodes_arena.push(node);
+        self.uses_edges.push(FxHashSet::default());
+        self.defines_edges.push(FxHashSet::default());
         self.node_ids_by_key.insert(key, id);
         self.nodes_by_name.entry(name).or_default().push(id);
         id
@@ -205,14 +209,14 @@ impl AnalysisSession {
         self.defined.insert(from_id);
         if let Some(to) = to_id {
             self.defined.insert(to);
-            self.defines_edges.entry(from_id).or_default().insert(to)
+            self.defines_edges[from_id].insert(to)
         } else {
             false
         }
     }
 
     pub(super) fn add_uses_edge(&mut self, from_id: NodeId, to_id: NodeId) -> bool {
-        let entry = self.uses_edges.entry(from_id).or_default();
+        let entry = &mut self.uses_edges[from_id];
         if entry.insert(to_id) {
             let to_name = self.nodes_arena[to_id].name;
             let to_ns = self.nodes_arena[to_id].namespace;
@@ -229,13 +233,12 @@ impl AnalysisSession {
     }
 
     pub(super) fn remove_uses_edge(&mut self, from_id: NodeId, to_id: NodeId) {
-        if let Some(edges) = self.uses_edges.get_mut(&from_id) {
-            if edges.remove(&to_id) {
-                // Clean up wild index if the removed edge was a wildcard.
-                let node = &self.nodes_arena[to_id];
-                if node.namespace.is_none() {
-                    self.wild_edge_index.remove(&(from_id, node.name));
-                }
+        let edges = &mut self.uses_edges[from_id];
+        if edges.remove(&to_id) {
+            // Clean up wild index if the removed edge was a wildcard.
+            let node = &self.nodes_arena[to_id];
+            if node.namespace.is_none() {
+                self.wild_edge_index.remove(&(from_id, node.name));
             }
         }
     }

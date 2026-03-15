@@ -756,11 +756,7 @@ fn collect_query_diagnostics(
             .filename
             .map(|sym| formatter.format_location(cg.interner.resolve(sym)));
         let line = source_node.line;
-        let mut targets: Vec<NodeId> = cg
-            .uses_edges
-            .get(&source_id)
-            .map(|targets| targets.iter().copied().collect())
-            .unwrap_or_default();
+        let mut targets: Vec<NodeId> = cg.uses_edges[source_id].iter().copied().collect();
         targets.sort_unstable_by(|a, b| {
             let left = &cg.nodes_arena[*a];
             let right = &cg.nodes_arena[*b];
@@ -1033,19 +1029,21 @@ pub fn summary(
                 let incoming_uses = cg
                     .uses_edges
                     .iter()
+                    .enumerate()
                     .flat_map(|(source, targets)| {
                         let symbol_names = symbol_names.clone();
                         targets.iter().filter(move |target| {
                             symbol_names.contains(cg.nodes_arena[**target].get_name(&cg.interner))
-                                && cg.defined.contains(source)
+                                && cg.defined.contains(&source)
                         })
                     })
                     .count();
                 let outgoing_uses = cg
                     .uses_edges
                     .iter()
+                    .enumerate()
                     .filter(|(source, _)| {
-                        symbol_names.contains(cg.nodes_arena[**source].get_name(&cg.interner))
+                        symbol_names.contains(cg.nodes_arena[*source].get_name(&cg.interner))
                     })
                     .map(|(_, targets)| {
                         targets
@@ -1062,15 +1060,15 @@ pub fn summary(
                 let mut caller_counts: FxHashMap<String, usize> = FxHashMap::default();
                 let mut callee_counts: FxHashMap<String, usize> = FxHashMap::default();
 
-                for (source, targets) in &cg.uses_edges {
-                    let source_name = cg.nodes_arena[*source].get_name(&cg.interner);
+                for (source, targets) in cg.uses_edges.iter().enumerate() {
+                    let source_name = cg.nodes_arena[source].get_name(&cg.interner);
                     let source_in_scope = symbol_names.contains(source_name);
                     for target_id in targets {
                         if !cg.defined.contains(target_id) {
                             continue;
                         }
                         let target_name = cg.nodes_arena[*target_id].get_name(&cg.interner);
-                        if symbol_names.contains(target_name) && cg.defined.contains(source) {
+                        if symbol_names.contains(target_name) && cg.defined.contains(&source) {
                             *caller_counts.entry(target_name.to_string()).or_insert(0) += 1;
                         }
                         if source_in_scope {
@@ -1138,11 +1136,8 @@ pub fn callees(
         Ok(source_id) => {
             let node = symbol_ref(&cg.nodes_arena[source_id], &formatter, &cg.interner)
                 .expect("resolved node should be public");
-            let mut edges: Vec<OutgoingEdge> = cg
-                .uses_edges
-                .get(&source_id)
-                .into_iter()
-                .flat_map(|targets| targets.iter())
+            let mut edges: Vec<OutgoingEdge> = cg.uses_edges[source_id]
+                .iter()
                 .filter_map(|target_id| {
                     if !cg.defined.contains(target_id) {
                         return None;
@@ -1190,12 +1185,13 @@ pub fn callers(
             let mut edges: Vec<IncomingEdge> = cg
                 .uses_edges
                 .iter()
+                .enumerate()
                 .filter_map(|(source_id, targets)| {
-                    if !cg.defined.contains(source_id) || !targets.contains(&target_id) {
+                    if !cg.defined.contains(&source_id) || !targets.contains(&target_id) {
                         return None;
                     }
-                    relevant_ids.insert(*source_id);
-                    symbol_ref(&cg.nodes_arena[*source_id], &formatter, &cg.interner).map(|source| IncomingEdge {
+                    relevant_ids.insert(source_id);
+                    symbol_ref(&cg.nodes_arena[source_id], &formatter, &cg.interner).map(|source| IncomingEdge {
                         kind: "uses".to_string(),
                         source,
                     })
@@ -1239,12 +1235,12 @@ pub fn neighbors(
                 .expect("resolved node should be public");
             let mut relevant_ids = FxHashSet::from_iter([node_id]);
             let mut incoming = Vec::new();
-            for (source_id, targets) in &cg.uses_edges {
-                if !cg.defined.contains(source_id) || !targets.contains(&node_id) {
+            for (source_id, targets) in cg.uses_edges.iter().enumerate() {
+                if !cg.defined.contains(&source_id) || !targets.contains(&node_id) {
                     continue;
                 }
-                relevant_ids.insert(*source_id);
-                if let Some(source) = symbol_ref(&cg.nodes_arena[*source_id], &formatter, &cg.interner) {
+                relevant_ids.insert(source_id);
+                if let Some(source) = symbol_ref(&cg.nodes_arena[source_id], &formatter, &cg.interner) {
                     incoming.push(IncomingEdge {
                         kind: "uses".to_string(),
                         source,
@@ -1252,12 +1248,7 @@ pub fn neighbors(
                 }
             }
             let mut outgoing = Vec::new();
-            for target_id in cg
-                .uses_edges
-                .get(&node_id)
-                .into_iter()
-                .flat_map(|targets| targets.iter())
-            {
+            for target_id in cg.uses_edges[node_id].iter() {
                 if !cg.defined.contains(target_id) {
                     continue;
                 }
@@ -1335,7 +1326,8 @@ pub fn path(
         if current == target_id {
             break;
         }
-        if let Some(targets) = cg.uses_edges.get(&current) {
+        {
+            let targets = &cg.uses_edges[current];
             let mut sorted_targets: Vec<NodeId> = targets
                 .iter()
                 .copied()

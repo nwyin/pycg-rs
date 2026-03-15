@@ -249,8 +249,8 @@ impl VisualGraph {
     pub fn from_call_graph(
         nodes_arena: &[Node],
         defined: &FxHashSet<NodeId>,
-        defines_edges: &FxHashMap<NodeId, FxHashSet<NodeId>>,
-        uses_edges: &FxHashMap<NodeId, FxHashSet<NodeId>>,
+        defines_edges: &[FxHashSet<NodeId>],
+        uses_edges: &[FxHashSet<NodeId>],
         options: &VisualOptions,
         interner: &Interner,
     ) -> Self {
@@ -377,7 +377,7 @@ impl VisualGraph {
 
         if options.draw_defines {
             let color = "#838b8b".to_string();
-            for (&src, targets) in defines_edges {
+            for (src, targets) in defines_edges.iter().enumerate() {
                 if !defined.contains(&src) {
                     continue;
                 }
@@ -403,7 +403,7 @@ impl VisualGraph {
 
         if options.draw_uses {
             let color = "#000000".to_string();
-            for (&src, targets) in uses_edges {
+            for (src, targets) in uses_edges.iter().enumerate() {
                 if !defined.contains(&src) {
                     continue;
                 }
@@ -573,8 +573,8 @@ mod tests {
         defined.insert(0);
         defined.insert(1);
 
-        let mut uses_edges = FxHashMap::default();
-        uses_edges.entry(0).or_insert_with(FxHashSet::default).insert(1);
+        let mut uses_edges = vec![FxHashSet::default(); 2];
+        uses_edges[0].insert(1);
 
         let options = VisualOptions {
             draw_defines: false,
@@ -587,7 +587,7 @@ mod tests {
         let vg = VisualGraph::from_call_graph(
             &nodes_arena,
             &defined,
-            &FxHashMap::default(),
+            &[FxHashSet::default(); 0],
             &uses_edges,
             &options,
             &interner,
@@ -629,8 +629,8 @@ mod tests {
         let vg = VisualGraph::from_call_graph(
             &nodes_arena,
             &defined,
-            &FxHashMap::default(),
-            &FxHashMap::default(),
+            &[],
+            &[],
             &options,
             &interner,
         );
@@ -664,8 +664,8 @@ mod tests {
         let vg = VisualGraph::from_call_graph(
             &nodes_arena,
             &defined,
-            &FxHashMap::default(),
-            &FxHashMap::default(),
+            &[],
+            &[],
             &options,
             &interner,
         );

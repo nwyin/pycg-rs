@@ -361,9 +361,7 @@ fn test_positional_unpack_correct_class_binding() {
     assert!(!star_at_end_ids.is_empty(), "star_at_end must exist");
     let uses_alpha_method = alpha_method_in_alpha.iter().any(|&mid| {
         star_at_end_ids.iter().any(|&fid| {
-            cg.uses_edges
-                .get(&fid)
-                .is_some_and(|targets| targets.contains(&mid))
+            cg.uses_edges[fid].contains(&mid)
         })
     });
     assert!(
@@ -389,9 +387,7 @@ fn test_positional_unpack_correct_class_binding() {
     let star_in_middle_ids = find_nodes_by_name(&cg, "star_in_middle");
     let uses_delta_method = delta_method_in_delta.iter().any(|&mid| {
         star_in_middle_ids.iter().any(|&fid| {
-            cg.uses_edges
-                .get(&fid)
-                .is_some_and(|targets| targets.contains(&mid))
+            cg.uses_edges[fid].contains(&mid)
         })
     });
     assert!(
@@ -550,9 +546,7 @@ fn test_accuracy_multi_return_both_methods_reachable() {
         .into_iter()
         .filter(|&id| {
             caller_ids.iter().any(|&cid| {
-                cg.uses_edges
-                    .get(&cid)
-                    .is_some_and(|targets| targets.contains(&id))
+                cg.uses_edges[cid].contains(&id)
             })
         })
         .collect();
@@ -580,9 +574,7 @@ fn test_accuracy_nested_multi_return_wrapper_preserves_all_candidates() {
         .into_iter()
         .filter(|&id| {
             caller_ids.iter().any(|&cid| {
-                cg.uses_edges
-                    .get(&cid)
-                    .is_some_and(|targets| targets.contains(&id))
+                cg.uses_edges[cid].contains(&id)
             })
         })
         .collect();
@@ -632,9 +624,7 @@ fn test_inv1_branch_join_preserves_both_branches() {
     let method_nodes: Vec<usize> = find_nodes_by_name(&cg, "method")
         .into_iter()
         .filter(|&id| {
-            cg.uses_edges
-                .get(&find_nodes_by_name(&cg, "caller")[0])
-                .is_some_and(|targets| targets.contains(&id))
+            cg.uses_edges[find_nodes_by_name(&cg, "caller")[0]].contains(&id)
         })
         .collect();
     assert!(
@@ -667,9 +657,7 @@ fn test_inv1_conditional_rebind_both_branches() {
         .into_iter()
         .filter(|&id| {
             caller_ids.iter().any(|&cid| {
-                cg.uses_edges
-                    .get(&cid)
-                    .is_some_and(|targets| targets.contains(&id))
+                cg.uses_edges[cid].contains(&id)
             })
         })
         .collect();
@@ -768,12 +756,10 @@ fn test_inv3_inheritance_still_resolves() {
 /// node with the given `to_name`, rather than a wildcard.
 fn has_concrete_uses_edge(cg: &CallGraph, from_name: &str, to_name: &str) -> bool {
     for &fid in find_nodes_by_name(cg, from_name).iter() {
-        if let Some(targets) = cg.uses_edges.get(&fid) {
-            for &tid in targets {
-                let n = &cg.nodes_arena[tid];
-                if cg.interner.resolve(n.name) == to_name && n.namespace.is_some() {
-                    return true;
-                }
+        for &tid in &cg.uses_edges[fid] {
+            let n = &cg.nodes_arena[tid];
+            if cg.interner.resolve(n.name) == to_name && n.namespace.is_some() {
+                return true;
             }
         }
     }
@@ -1052,9 +1038,7 @@ fn test_expand_unknowns_scoped_by_concrete_resolution() {
     let precision_caller_ids = find_nodes_by_name(&cg, "precision_caller");
     let has_worker_b_edge = worker_b_do_work.iter().any(|&mid| {
         precision_caller_ids.iter().any(|&fid| {
-            cg.uses_edges
-                .get(&fid)
-                .is_some_and(|targets| targets.contains(&mid))
+            cg.uses_edges[fid].contains(&mid)
         })
     });
     assert!(
@@ -1088,9 +1072,7 @@ fn test_expand_unknowns_fanout_count_bounded() {
             // Only count concrete (namespaced) nodes.
             cg.nodes_arena[mid].namespace.is_some()
                 && precision_caller_ids.iter().any(|&fid| {
-                    cg.uses_edges
-                        .get(&fid)
-                        .is_some_and(|targets| targets.contains(&mid))
+                    cg.uses_edges[fid].contains(&mid)
                 })
         })
         .count();

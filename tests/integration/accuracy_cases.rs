@@ -126,11 +126,10 @@ fn evaluate_expectation(cg: &CallGraph, expectation: &AccuracyExpectation) -> Ex
 
     let mut matched_target_ids = HashSet::new();
     for source_id in source_ids {
-        if let Some(targets) = edge_map.get(&source_id) {
-            for target_id in &target_ids {
-                if targets.contains(target_id) {
-                    matched_target_ids.insert(*target_id);
-                }
+        let targets = &edge_map[source_id];
+        for target_id in &target_ids {
+            if targets.contains(target_id) {
+                matched_target_ids.insert(*target_id);
             }
         }
     }
