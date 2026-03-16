@@ -103,16 +103,15 @@ grep-and-hope exercise into a precise, bounded query.
 The key design decision in pycg-rs is <strong>machine-consumable output</strong>.
 Every subcommand emits structured JSON with versioned schemas, diagnostics that
 surface uncertainty, and provenance metadata. This is not a tool for generating
-pretty diagrams (though it can do that too) &mdash; it is a routing layer that
-tells an agent which files to read, which functions to inspect, and how
-confident to be in the result.
+pretty diagrams (though it can do that too). It is a routing layer that tells
+an agent which files to read, which functions to inspect, and how confident to
+be in the result.
 </p>
 
 <p>
-Speed matters because the tool runs in the loop, not ahead of it. At 34 ms on a
+Speed matters because the tool runs inside the editing loop. At 34 ms on a
 small package and under 200 ms on most real codebases, pycg-rs is fast enough to
-invoke on every prompt &mdash; as a live tool call, not a pre-computed artifact
-that goes stale.
+invoke on every prompt. You call it live, so the results are never stale.
 </p>
 
 <p>
@@ -262,7 +261,7 @@ def _hero_html(accuracy: dict | None) -> str:
       Accuracy measured on
       <a href="https://github.com/nwyin/pycg-rs/blob/main/tests/fixtures/accuracy_cases.json">116 fixture expectations</a>
       across 18 categories. Speed measured on real open-source projects (single-threaded, cold).
-      <a href="https://github.com/nwyin/pycg-rs/blob/main/docs/limitations.md">Limitations documented honestly.</a>
+      <a href="https://github.com/nwyin/pycg-rs/blob/main/docs/limitations.md">Limitations documented here.</a>
     </p>
     <table class="comparison-table">
       <thead>
