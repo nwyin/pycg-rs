@@ -44,6 +44,7 @@ jobs:
 
       - name: Run accuracy check
         run: |
+          mkdir -p report
           python scripts/accuracy_report.py \
             --pycg ./target/release/pycg \
             --out report/accuracy.json
