@@ -15,7 +15,7 @@ use pycg_rs::writer::{self, JsonGraphMode, JsonOutputOptions};
 #[derive(Parser)]
 #[command(
     name = "pycg",
-    about = "Generate call graphs for Python programs",
+    about = "Static call-graph generator for Python source code",
     subcommand_precedence_over_arg = true,
     subcommand_required = true,
     arg_required_else_help = true
@@ -35,12 +35,93 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Build a full call graph and render it as DOT, TGF, text, or JSON
+    #[command(
+        after_help = "\
+Examples:
+  pycg analyze src/                              # DOT graph of all .py files under src/
+  pycg analyze src/ --format json                # machine-readable JSON
+  pycg analyze src/ -m --format dot | dot -Tsvg  # module-level import graph as SVG
+  pycg analyze src/ -d -u -c -g -a               # full-detail visual graph"
+    )]
     Analyze(AnalyzeArgs),
+
+    /// List symbols defined in a file, directory, or module
+    #[command(
+        long_about = "\
+List symbols defined in a file, directory, or module
+
+Builds a call graph from FILES, then lists every symbol (function, class,
+method, module) whose definition falls within TARGET.",
+        after_help = "\
+Examples:
+  pycg symbols-in src/auth.py src/   # list all symbols defined in auth.py
+  pycg symbols-in myapp.auth src/    # same, by module name
+  pycg symbols-in src/auth/ src/ -m  # list module-level nodes in the auth package"
+    )]
     SymbolsIn(TargetQueryArgs),
+
+    /// Aggregate stats for a file, directory, or module within the call graph
+    #[command(
+        long_about = "\
+Aggregate stats for a file, directory, or module within the call graph
+
+Builds a call graph from FILES, then reports symbol counts, edge counts, and
+top-level symbols for TARGET. TARGET is scoped within the larger graph, so
+cross-module call edges are included when the callers appear in FILES.",
+        after_help = "\
+Examples:
+  pycg summary src/auth.py src/         # summarize auth.py in the context of all src/
+  pycg summary src/auth/ src/           # summarize an entire subpackage
+  pycg summary myapp.auth src/ --target-kind module  # target by module name
+  pycg summary src/auth.py src/ --stats # include per-symbol caller/callee counts"
+    )]
     Summary(SummaryArgs),
+
+    /// List functions called by a given symbol
+    #[command(
+        after_help = "\
+Examples:
+  pycg callees myapp.auth.login src/          # what does login() call?
+  pycg callees login src/ --match suffix      # match any symbol ending in \"login\"
+  pycg callees myapp.auth.login src/ --format text"
+    )]
     Callees(SymbolQueryArgs),
+
+    /// List functions that call a given symbol
+    #[command(
+        after_help = "\
+Examples:
+  pycg callers myapp.db.connect src/          # who calls connect()?
+  pycg callers connect src/ --match suffix    # match any symbol ending in \"connect\""
+    )]
     Callers(SymbolQueryArgs),
+
+    /// List both callers and callees of a given symbol
+    #[command(
+        long_about = "\
+List both callers and callees of a given symbol
+
+Combines the output of callees and callers into a single response.",
+        after_help = "\
+Examples:
+  pycg neighbors myapp.auth.login src/  # all edges touching login()"
+    )]
     Neighbors(SymbolQueryArgs),
+
+    /// Find call chains between two symbols
+    #[command(
+        long_about = "\
+Find call chains between two symbols
+
+Searches for a shortest path from SOURCE to TARGET in the call graph.
+Reports whether a transitive calling relationship exists and, if so,
+the intermediate symbols along the chain.",
+        after_help = "\
+Examples:
+  pycg path myapp.api.handle_request myapp.db.query src/  # can handle_request reach query()?
+  pycg path handle_request query src/ --match suffix       # same, with suffix matching"
+    )]
     Path(PathQueryArgs),
 }
 
@@ -54,23 +135,23 @@ struct AnalyzeArgs {
     #[arg(long, default_value = "dot")]
     format: Format,
 
-    /// Draw defines edges
+    /// Draw defines edges (e.g. module defines function)
     #[arg(long, short = 'd')]
     defines: bool,
 
-    /// Draw uses edges
+    /// Draw uses edges (i.e. call edges). Default when neither -d nor -u is given
     #[arg(long, short = 'u')]
     uses: bool,
 
-    /// Color nodes by file
+    /// Color nodes by source file (DOT only)
     #[arg(long, short = 'c')]
     colored: bool,
 
-    /// Group nodes by namespace
+    /// Group nodes by namespace (DOT only)
     #[arg(long, short = 'g')]
     grouped: bool,
 
-    /// Annotate nodes with file:line info
+    /// Annotate nodes with file:line location
     #[arg(long, short = 'a')]
     annotated: bool,
 
@@ -78,7 +159,7 @@ struct AnalyzeArgs {
     #[arg(long, default_value = "TB")]
     rankdir: String,
 
-    /// Show module-level import dependencies instead of symbol-level call graph
+    /// Show module-level import graph instead of symbol-level call graph
     #[arg(long, short = 'm')]
     modules: bool,
 }
@@ -118,18 +199,18 @@ struct QueryCommonArgs {
 
 #[derive(Args, Clone)]
 struct TargetQueryArgs {
-    /// File, directory, or module target to query
+    /// File, directory, or module to query. Paths are auto-detected; use --target-kind to override
     target: String,
 
-    /// Python source files or directories to analyze
+    /// Python source files or directories that form the analysis scope
     #[arg(required = true)]
     files: Vec<PathBuf>,
 
-    /// Interpret the target as a path or module name
+    /// Force target interpretation as a path or module name
     #[arg(long)]
     target_kind: Option<TargetKindArg>,
 
-    /// Query the module graph rather than the symbol graph
+    /// Query the module graph instead of the symbol graph
     #[arg(long, short = 'm')]
     modules: bool,
 
@@ -142,14 +223,14 @@ struct SummaryArgs {
     #[command(flatten)]
     target: TargetQueryArgs,
 
-    /// Include per-symbol caller/callee counts
+    /// Include per-symbol caller and callee counts
     #[arg(long)]
     stats: bool,
 }
 
 #[derive(Args, Clone)]
 struct SymbolQueryArgs {
-    /// Canonical symbol name to query
+    /// Fully-qualified symbol name (e.g. myapp.auth.login)
     symbol: String,
 
     /// Python source files or directories to analyze
@@ -166,10 +247,10 @@ struct SymbolQueryArgs {
 
 #[derive(Args, Clone)]
 struct PathQueryArgs {
-    /// Source canonical symbol name
+    /// Fully-qualified source symbol name (the caller end)
     source: String,
 
-    /// Target canonical symbol name
+    /// Fully-qualified target symbol name (the callee end)
     target: String,
 
     /// Python source files or directories to analyze
