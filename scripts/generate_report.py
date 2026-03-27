@@ -2,8 +2,7 @@
 """Generate a self-contained HTML page for pycg-rs.
 
 Runs pycg on popular Python projects and emits a single index.html with
-a landing section, corpus results, and a short essay on why call graphs
-matter for LLM workflows.
+a landing section and corpus results.
 
     python scripts/generate_report.py --pycg ./target/release/pycg \
         --corpora benchmarks/corpora --out report/index.html
@@ -84,39 +83,6 @@ $ pycg callees get_profile src/app/ --match suffix
 # Static content: "why" essay
 # ---------------------------------------------------------------------------
 
-WHY_ESSAY = """\
-<p>
-LLMs working on code face a fundamental constraint: they cannot read an entire
-repository. Context windows are finite, and even million-token models degrade
-when stuffed with irrelevant source files. The practical question is always
-<em>which code should the model see?</em>
-</p>
-
-<p>
-Call graphs answer this structurally. Given a function you want to change, the
-graph tells you what it calls, what calls it, and the shortest dependency path
-between any two symbols. This turns "find all code related to X" from a
-grep-and-search exercise into a precise, bounded query.
-</p>
-
-<p>
-The key design decision in pycg-rs is <strong>machine-consumable output</strong>.
-Every subcommand emits structured JSON with versioned schemas, diagnostics that
-surface uncertainty, and provenance metadata. This is not a tool for generating
-pretty diagrams (though it can do that too). It is a routing layer that tells
-an agent which files to read, which functions to inspect, and how confident to
-be in the result.
-</p>
-
-<p>
-Static analysis is not omniscient. Dynamic dispatch, metaprogramming, and
-framework magic will always create blind spots. The right response is not to
-pretend these don't exist, but to surface them: pycg-rs reports external
-references, unresolved names, and ambiguous resolutions as first-class
-diagnostics. An agent that reads the diagnostics can decide when to trust the
-graph and when to fall back to broader search.
-</p>
-"""
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -379,13 +345,6 @@ def _corpus_html(corpora_results: list[dict], accuracy: dict | None) -> str:
 </section>"""
 
 
-def _essay_html() -> str:
-    return f"""
-<section class="section why-essay" id="why">
-  <h2>Why machine-readable call graphs matter for LLM workflows</h2>
-  {WHY_ESSAY}
-</section>"""
-
 
 def generate_html(corpora_results: list[dict], meta: dict, accuracy: dict | None) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -393,8 +352,6 @@ def generate_html(corpora_results: list[dict], meta: dict, accuracy: dict | None
 
     hero = _hero_html(accuracy)
     corpus = _corpus_html(corpora_results, accuracy)
-    essay = _essay_html()
-
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -548,17 +505,6 @@ details.corpus-detail summary:hover {{ color: var(--accent); }}
 .svg-container svg {{ max-width: 100%; height: auto; }}
 .no-svg {{ color: var(--text-muted); font-style: italic; font-size: 0.8125rem; }}
 
-/* Why essay */
-.why-essay p {{
-  color: var(--text-muted);
-  font-size: 0.9375rem;
-  line-height: 1.7;
-  max-width: 65ch;
-  margin-bottom: 1rem;
-}}
-.why-essay strong {{ color: var(--text); }}
-.why-essay em {{ color: var(--text); font-style: italic; }}
-
 /* Footer */
 footer {{
   margin-top: 3rem;
@@ -574,7 +520,6 @@ footer a {{ color: var(--accent); }}
 
 {hero}
 {corpus}
-{essay}
 
 <footer>
   Generated {now} from commit <code>{escape(str(commit)[:8])}</code>.
